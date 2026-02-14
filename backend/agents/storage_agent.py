@@ -108,6 +108,11 @@ async def ingest_file(
         doc_id = hashlib.sha256(file_path.encode()).hexdigest()[:16]
         now = datetime.utcnow().isoformat()
 
+        # Keep a content snippet (first 1500 chars) so the LLM can answer
+        # specific questions at query time. The description is still what
+        # gets embedded for semantic search.
+        content_snippet = content[:1500]
+
         metadata = {
             "file_path": file_path,
             "file_name": filename,
@@ -118,6 +123,7 @@ async def ingest_file(
             "file_date": now,  # Best effort — real date comes from the phone
             "has_events": has_events,
             "summary": summary,
+            "content_snippet": content_snippet,
         }
         vector_store.store_document(doc_id, description, metadata)
 

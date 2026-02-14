@@ -9,8 +9,10 @@ import {
   StatusBar,
   ActivityIndicator,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setBackendUrl, getBackendUrl, api } from "../services/api";
+import { colors, spacing, radii, typography } from "../constants/theme";
 
 const SETUP_DONE_KEY = "mindvault_setup_done";
 
@@ -25,18 +27,15 @@ export default function Layout() {
   const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
-    // Always re-verify on app start
     (async () => {
       const savedUrl = await getBackendUrl();
       setUrl(savedUrl);
       const done = await AsyncStorage.getItem(SETUP_DONE_KEY);
       if (done === "true") {
-        // Quick verify the saved URL still works
         try {
           await api.health();
           setSetupDone(true);
         } catch {
-          // Connection failed — force setup screen
           setSetupDone(false);
         }
       }
@@ -44,7 +43,6 @@ export default function Layout() {
     })();
   }, []);
 
-  // Allow other screens to go back to setup
   showSetup = () => {
     AsyncStorage.removeItem(SETUP_DONE_KEY);
     setSetupDone(false);
@@ -77,6 +75,12 @@ export default function Layout() {
     return (
       <View style={setupStyles.container}>
         <StatusBar barStyle="light-content" />
+        <Ionicons
+          name="shield-checkmark"
+          size={64}
+          color={colors.primary}
+          style={{ marginBottom: spacing.lg }}
+        />
         <Text style={setupStyles.logo}>MindVault</Text>
         <Text style={setupStyles.subtitle}>Connect to your backend</Text>
         <TextInput
@@ -87,38 +91,56 @@ export default function Layout() {
             setStatus(null);
           }}
           placeholder="http://192.168.x.x:8000"
-          placeholderTextColor="#666"
+          placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
+          accessibilityLabel="Backend server URL"
+          accessibilityHint="Enter the IP address and port of your MindVault backend"
         />
 
         <TouchableOpacity
           style={setupStyles.testButton}
           onPress={handleTest}
           disabled={testing}
+          activeOpacity={0.7}
+          accessibilityLabel="Test connection to backend"
+          accessibilityRole="button"
         >
           {testing ? (
-            <ActivityIndicator color="#6c63ff" size="small" />
+            <ActivityIndicator color={colors.primary} size="small" />
           ) : (
             <Text style={setupStyles.testButtonText}>Test Connection</Text>
           )}
         </TouchableOpacity>
 
         {status === "connected" && (
-          <Text style={[setupStyles.status, { color: "#2ecc71" }]}>
-            Connected - All services healthy
-          </Text>
+          <View style={setupStyles.statusRow}>
+            <Ionicons
+              name="checkmark-circle"
+              size={18}
+              color={colors.success}
+            />
+            <Text style={[setupStyles.status, { color: colors.success }]}>
+              Connected - All services healthy
+            </Text>
+          </View>
         )}
         {status === "degraded" && (
-          <Text style={[setupStyles.status, { color: "#f39c12" }]}>
-            Connected - Some services degraded
-          </Text>
+          <View style={setupStyles.statusRow}>
+            <Ionicons name="alert-circle" size={18} color={colors.warning} />
+            <Text style={[setupStyles.status, { color: colors.warning }]}>
+              Connected - Some services degraded
+            </Text>
+          </View>
         )}
         {status === "error" && (
-          <Text style={[setupStyles.status, { color: "#e74c3c" }]}>
-            Cannot reach backend. Check the IP and port.
-          </Text>
+          <View style={setupStyles.statusRow}>
+            <Ionicons name="close-circle" size={18} color={colors.danger} />
+            <Text style={[setupStyles.status, { color: colors.danger }]}>
+              Cannot reach backend. Check the IP and port.
+            </Text>
+          </View>
         )}
 
         <TouchableOpacity
@@ -128,6 +150,9 @@ export default function Layout() {
           ]}
           onPress={handleConnect}
           disabled={!status || status === "error"}
+          activeOpacity={0.7}
+          accessibilityLabel="Continue to app"
+          accessibilityRole="button"
         >
           <Text style={setupStyles.buttonText}>Continue</Text>
         </TouchableOpacity>
@@ -140,31 +165,55 @@ export default function Layout() {
       <StatusBar barStyle="light-content" />
       <Tabs
         screenOptions={{
-          headerStyle: { backgroundColor: "#0f0f1a" },
-          headerTintColor: "#e0e0e0",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.textPrimary,
           tabBarStyle: {
-            backgroundColor: "#0f0f1a",
-            borderTopColor: "#1a1a2e",
+            backgroundColor: colors.background,
+            borderTopColor: colors.card,
           },
-          tabBarActiveTintColor: "#6c63ff",
-          tabBarInactiveTintColor: "#666",
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.textMuted,
         }}
       >
         <Tabs.Screen
           name="index"
-          options={{ title: "MindVault", tabBarLabel: "Home" }}
+          options={{
+            title: "MindVault",
+            tabBarLabel: "Home",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="home" size={size} color={color} />
+            ),
+          }}
         />
         <Tabs.Screen
           name="scan"
-          options={{ title: "Scan Files", tabBarLabel: "Scan" }}
+          options={{
+            title: "Scan Files",
+            tabBarLabel: "Scan",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="scan" size={size} color={color} />
+            ),
+          }}
         />
         <Tabs.Screen
           name="memories"
-          options={{ title: "Memories", tabBarLabel: "Memories" }}
+          options={{
+            title: "Memories",
+            tabBarLabel: "Memories",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="file-tray-full" size={size} color={color} />
+            ),
+          }}
         />
         <Tabs.Screen
           name="notifications"
-          options={{ title: "Events", tabBarLabel: "Events" }}
+          options={{
+            title: "Events",
+            tabBarLabel: "Events",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="notifications" size={size} color={color} />
+            ),
+          }}
         />
       </Tabs>
     </>
@@ -174,39 +223,60 @@ export default function Layout() {
 const setupStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f1a",
+    backgroundColor: colors.background,
     justifyContent: "center",
     alignItems: "center",
-    padding: 32,
+    padding: spacing.xxxl,
   },
-  logo: { fontSize: 36, fontWeight: "800", color: "#6c63ff", marginBottom: 8 },
-  subtitle: { fontSize: 16, color: "#a0a0b0", marginBottom: 32 },
+  logo: {
+    ...typography.hero,
+    color: colors.primary,
+    marginBottom: spacing.sm,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: colors.textSecondary,
+    marginBottom: spacing.xxxl,
+  },
   input: {
     width: "100%",
-    backgroundColor: "#1a1a2e",
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: colors.card,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
     fontSize: 16,
-    color: "#e0e0e0",
+    color: colors.textPrimary,
     borderWidth: 1,
-    borderColor: "#2d2d44",
-    marginBottom: 16,
+    borderColor: colors.border,
+    marginBottom: spacing.lg,
   },
   testButton: {
     borderWidth: 1,
-    borderColor: "#6c63ff",
-    borderRadius: 12,
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    marginBottom: 12,
+    borderColor: colors.primary,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.xxxl,
+    paddingVertical: spacing.md,
+    marginBottom: spacing.md,
   },
-  testButtonText: { color: "#6c63ff", fontSize: 15, fontWeight: "600" },
-  status: { fontSize: 14, marginBottom: 20, textAlign: "center" },
+  testButtonText: {
+    color: colors.primary,
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  statusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.xl,
+  },
+  status: {
+    fontSize: 14,
+    textAlign: "center",
+  },
   button: {
-    backgroundColor: "#6c63ff",
-    borderRadius: 12,
+    backgroundColor: colors.primary,
+    borderRadius: radii.lg,
     paddingHorizontal: 48,
-    paddingVertical: 14,
+    paddingVertical: spacing.xl - 6,
   },
   buttonDisabled: { opacity: 0.3 },
   buttonText: { color: "#fff", fontSize: 17, fontWeight: "700" },

@@ -165,15 +165,30 @@ async def query_files(request: QueryRequest):
             verified=True,
         )
 
-    # Build context string from retrieved docs
+    # Smart relevance filtering:
+    # 1. Best match must be under 1.0 (cosine distance) to be useful at all
+    # 2. Only include other results within 0.15 of the best match
+    #    This drops the "long tail" of unrelated files
+    best_distance = docs[0].get("distance", 2.0)
+
+    if best_distance > 1.0:
+        return QueryResponse(
+            answer="I couldn't find relevant information in your files.",
+            sources=[],
+            verified=True,
+        )
+
+    relevant_docs = [d for d in docs if d.get("distance", 2.0) <= best_distance + 0.15]
+
+    # Build context with content snippets so the LLM can answer specific questions
     context_parts = []
     sources = []
-    for doc in docs:
+    for doc in relevant_docs:
+        snippet = doc.get("content_snippet", "")
         context_parts.append(
             f"File: {doc.get('file_name', 'unknown')}\n"
             f"Description: {doc.get('description', '')}\n"
-            f"Summary: {doc.get('summary', '')}\n"
-            f"Category: {doc.get('category', '')}"
+            f"Content: {snippet}"
         )
         sources.append(
             SourceFile(

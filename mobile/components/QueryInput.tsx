@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   View,
   TextInput,
@@ -6,7 +6,9 @@ import {
   StyleSheet,
   ActivityIndicator,
   Text,
-} from 'react-native';
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { colors, spacing, radii } from "../constants/theme";
 
 interface Props {
   onSubmit: (question: string) => void;
@@ -14,7 +16,7 @@ interface Props {
 }
 
 export default function QueryInput({ onSubmit, loading }: Props) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
 
   const handleSubmit = () => {
     const trimmed = text.trim();
@@ -27,23 +29,28 @@ export default function QueryInput({ onSubmit, loading }: Props) {
       <TextInput
         style={styles.input}
         placeholder="Ask anything about your files..."
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.textMuted}
         value={text}
         onChangeText={setText}
         onSubmitEditing={handleSubmit}
         returnKeyType="search"
         editable={!loading}
         multiline={false}
+        accessibilityLabel="Search your files"
+        accessibilityHint="Type a question to search your memories"
       />
       <TouchableOpacity
         style={[styles.button, loading && styles.buttonDisabled]}
         onPress={handleSubmit}
         disabled={loading || !text.trim()}
+        activeOpacity={0.7}
+        accessibilityLabel="Submit search"
+        accessibilityRole="button"
       >
         {loading ? (
           <ActivityIndicator size="small" color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Ask</Text>
+          <Ionicons name="arrow-forward" size={20} color="#fff" />
         )}
       </TouchableOpacity>
     </View>
@@ -52,34 +59,29 @@ export default function QueryInput({ onSubmit, loading }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderRadius: radii.xl + 2,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
-    borderColor: '#2d2d44',
+    borderColor: colors.border,
   },
   input: {
     flex: 1,
-    color: '#e0e0e0',
+    color: colors.textPrimary,
     fontSize: 16,
-    paddingVertical: 12,
+    paddingVertical: spacing.md,
   },
   button: {
-    backgroundColor: '#6c63ff',
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    marginLeft: 8,
+    backgroundColor: colors.primary,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    marginLeft: spacing.sm,
   },
   buttonDisabled: {
     opacity: 0.5,
-  },
-  buttonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
   },
 });

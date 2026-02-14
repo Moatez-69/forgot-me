@@ -1,23 +1,24 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import type { MemoryItem } from '../services/api';
+import React from "react";
+import { View, Text, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { colors, spacing, radii, getCategoryColor } from "../constants/theme";
+import type { MemoryItem } from "../services/api";
 
-const MODALITY_ICONS: Record<string, string> = {
-  pdf: '📄',
-  image: '🖼️',
-  audio: '🎵',
-  text: '📝',
-  calendar: '📅',
-  email: '✉️',
+const MODALITY_ICONS: Record<
+  string,
+  { name: keyof typeof Ionicons.glyphMap; color: string }
+> = {
+  pdf: { name: "document-text", color: colors.modalityPdf },
+  image: { name: "image", color: colors.modalityImage },
+  audio: { name: "musical-notes", color: colors.modalityAudio },
+  text: { name: "create", color: colors.modalityText },
+  calendar: { name: "calendar", color: colors.modalityCalendar },
+  email: { name: "mail", color: colors.modalityEmail },
 };
 
-const CATEGORY_COLORS: Record<string, string> = {
-  work: '#4a9eff',
-  study: '#ff9f43',
-  personal: '#54a0ff',
-  medical: '#ee5a24',
-  finance: '#2ecc71',
-  other: '#a0a0a0',
+const DEFAULT_ICON = {
+  name: "folder" as keyof typeof Ionicons.glyphMap,
+  color: colors.textMuted,
 };
 
 interface Props {
@@ -25,13 +26,22 @@ interface Props {
 }
 
 export default function MemoryCard({ item }: Props) {
-  const icon = MODALITY_ICONS[item.modality] || '📁';
-  const badgeColor = CATEGORY_COLORS[item.category] || CATEGORY_COLORS.other;
+  const iconInfo = MODALITY_ICONS[item.modality] || DEFAULT_ICON;
+  const badgeColor = getCategoryColor(item.category);
   const timeAgo = formatTimeAgo(item.timestamp);
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.icon}>{icon}</Text>
+    <View
+      style={styles.card}
+      accessibilityLabel={`${item.file_name}, ${item.category}, ${item.summary}`}
+      accessibilityRole="summary"
+    >
+      <Ionicons
+        name={iconInfo.name}
+        size={26}
+        color={iconInfo.color}
+        style={styles.icon}
+      />
       <View style={styles.content}>
         <Text style={styles.fileName} numberOfLines={1}>
           {item.file_name}
@@ -57,7 +67,7 @@ function formatTimeAgo(isoString: string): string {
     const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
 
-    if (diffMins < 1) return 'just now';
+    if (diffMins < 1) return "just now";
     if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
     if (diffHours < 24) return `${diffHours}h ago`;
@@ -65,59 +75,58 @@ function formatTimeAgo(isoString: string): string {
     if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString();
   } catch {
-    return '';
+    return "";
   }
 }
 
 const styles = StyleSheet.create({
   card: {
-    flexDirection: 'row',
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+    flexDirection: "row",
+    backgroundColor: colors.card,
+    borderRadius: radii.lg,
+    padding: spacing.xl - 6,
+    marginBottom: spacing.sm + 2,
     borderWidth: 1,
-    borderColor: '#2d2d44',
+    borderColor: colors.border,
   },
   icon: {
-    fontSize: 28,
-    marginRight: 12,
-    alignSelf: 'flex-start',
+    marginRight: spacing.md,
+    alignSelf: "flex-start",
     marginTop: 2,
   },
   content: {
     flex: 1,
   },
   fileName: {
-    color: '#e0e0e0',
+    color: colors.textPrimary,
     fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 4,
+    fontWeight: "600",
+    marginBottom: spacing.xs,
   },
   summary: {
-    color: '#a0a0b0',
+    color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   badge: {
-    borderRadius: 8,
+    borderRadius: radii.md,
     paddingHorizontal: 10,
     paddingVertical: 3,
   },
   badgeText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+    fontWeight: "600",
+    textTransform: "capitalize",
   },
   timestamp: {
-    color: '#666',
+    color: colors.textMuted,
     fontSize: 11,
   },
 });

@@ -17,6 +17,10 @@ COPY . .
 # Create persistent storage directories
 RUN mkdir -p /app/chroma_db
 
+# Pre-download the sentence-transformer model at build time
+# so it doesn't need internet access at runtime
+RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
 EXPOSE 8000
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -86,18 +86,19 @@ Respond ONLY with valid JSON."""
 
 async def answer_query(question: str, context: str) -> str:
     """Generate an answer grounded in the retrieved file context."""
-    prompt = f"""You are a personal knowledge assistant. Answer the user's question using ONLY the provided file references.
-Always cite which file the information comes from using the file_name.
-If the answer is not found in the provided context, say "I couldn't find relevant information in your files."
+    prompt = f"""You are a helpful assistant. Read the file contents below carefully, then answer the question.
+ONLY use information that is directly present in the files. Mention which file the answer comes from.
+If none of the files contain information relevant to the question, say "No relevant information found in your files."
 
-User question: {question}
-
-Relevant files found:
+--- FILES START ---
 {context}
+--- FILES END ---
 
-Answer concisely and cite file names."""
+Question: {question}
 
-    return await generate(prompt, temperature=0.4)
+Answer:"""
+
+    return await generate(prompt, temperature=0.3)
 
 
 async def verify_answer(question: str, context: str, answer: str) -> bool:
@@ -105,13 +106,14 @@ async def verify_answer(question: str, context: str, answer: str) -> bool:
     Self-verification step: ask the LLM if its own answer is grounded.
     Returns True if the answer is verified as grounded.
     """
-    prompt = f"""You are a verification assistant. Check if the following answer is grounded in the provided context.
+    prompt = f"""Does the answer below use information from the provided files? Reply YES or NO only.
 
-Question: {question}
-Context: {context}
+Files:
+{context[:1500]}
+
 Answer: {answer}
 
-Is this answer grounded in the provided context? Reply with ONLY "YES" or "NO"."""
+Reply YES or NO:"""
 
     raw = await generate(prompt, temperature=0.1)
     return raw.strip().upper().startswith("YES")
