@@ -22,6 +22,7 @@ export default function QueryInput({ onSubmit, loading }: Props) {
     const trimmed = text.trim();
     if (!trimmed || loading) return;
     onSubmit(trimmed);
+    setText("");
   };
 
   return (

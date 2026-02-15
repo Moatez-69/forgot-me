@@ -8,12 +8,21 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import {
   StorageAccessFramework,
   readAsStringAsync,
   EncodingType,
 } from "expo-file-system/legacy";
 import { api, FilePayload, IngestResult } from "../services/api";
+import FadeIn from "../components/FadeIn";
+import {
+  colors,
+  spacing,
+  radii,
+  typography,
+  getCategoryColor,
+} from "../constants/theme";
 
 const ALLOWED_EXTENSIONS = [
   ".pdf",
@@ -43,16 +52,24 @@ function getExtension(name: string): string {
   return dot >= 0 ? name.substring(dot).toLowerCase() : "";
 }
 
+// Push notifications require a development build (not Expo Go).
+// This is a placeholder — when using a dev build, import expo-notifications
+// here and schedule notifications for future events after ingestion.
+async function scheduleEventNotifications(_filesWithEvents: DiscoveredFile[]) {
+  // no-op in Expo Go
+}
+
 export default function ScanScreen() {
   const [files, setFiles] = useState<DiscoveredFile[]>([]);
   const [scanning, setScanning] = useState(false);
   const [ingesting, setIngesting] = useState(false);
+  const [processedCount, setProcessedCount] = useState(0);
+  const [totalToProcess, setTotalToProcess] = useState(0);
 
   const handleScanFolder = async () => {
     try {
       setScanning(true);
 
-      // Ask user to pick a folder — grants read access to all files inside
       const permissions =
         await StorageAccessFramework.requestDirectoryPermissionsAsync();
       if (!permissions.granted) {
@@ -61,14 +78,10 @@ export default function ScanScreen() {
       }
 
       const dirUri = permissions.directoryUri;
-
-      // List all files in the selected directory
       const fileUris = await StorageAccessFramework.readDirectoryAsync(dirUri);
 
-      // Filter by allowed extensions and build file list
       const discovered: DiscoveredFile[] = [];
       for (const uri of fileUris) {
-        // SAF URIs encode the filename — decode it
         const decodedUri = decodeURIComponent(uri);
         const segments = decodedUri.split(/[/:%]/);
         const name = segments[segments.length - 1] || "unknown";
@@ -107,61 +120,124 @@ export default function ScanScreen() {
   };
 
   const handleIngest = async () => {
-    const selected = files.filter((f) => f.selected && f.status !== "done");
-    if (selected.length === 0) {
+    const selectedIndices: number[] = [];
+    files.forEach((f, i) => {
+      if (f.selected && f.status !== "done") selectedIndices.push(i);
+    });
+    if (selectedIndices.length === 0) {
       Alert.alert("No files selected", "Select at least one file to ingest.");
       return;
     }
 
     setIngesting(true);
+    setProcessedCount(0);
+    setTotalToProcess(selectedIndices.length);
 
-    for (let i = 0; i < files.length; i++) {
-      if (!files[i].selected || files[i].status === "done") continue;
+    // Mark all selected as processing
+    setFiles((prev) =>
+      prev.map((f, i) =>
+        selectedIndices.includes(i) ? { ...f, status: "processing" } : f,
+      ),
+    );
 
-      setFiles((prev) =>
-        prev.map((f, j) => (j === i ? { ...f, status: "processing" } : f)),
-      );
+    try {
+      // Read all files as base64 first
+      const payloads: FilePayload[] = [];
+      const payloadIndexMap: number[] = []; // maps payload index -> files index
+      for (const i of selectedIndices) {
+        try {
+          const base64 = await readAsStringAsync(files[i].uri, {
+            encoding: EncodingType.Base64,
+          });
+          payloads.push({
+            file_path: files[i].uri,
+            file_content_base64: base64,
+            filename: files[i].name,
+          });
+          payloadIndexMap.push(i);
+        } catch (err: any) {
+          setFiles((prev) =>
+            prev.map((f, j) =>
+              j === i
+                ? {
+                    ...f,
+                    status: "error",
+                    result: {
+                      success: false,
+                      file_path: files[i].uri,
+                      description: "",
+                      category: "",
+                      has_events: false,
+                      error: err.message || "Failed to read file",
+                    },
+                  }
+                : f,
+            ),
+          );
+        }
+      }
 
-      try {
-        // Read file content as base64 via SAF
-        const base64 = await readAsStringAsync(files[i].uri, {
-          encoding: EncodingType.Base64,
-        });
+      if (payloads.length > 0) {
+        // Send batch request
+        const batchResult = await api.ingestBatch(payloads);
 
-        const payload: FilePayload = {
-          file_path: files[i].uri,
-          file_content_base64: base64,
-          filename: files[i].name,
-        };
-
-        const result = await api.ingest(payload);
-
+        // Map results back to file indices
         setFiles((prev) =>
-          prev.map((f, j) =>
-            j === i
-              ? { ...f, status: result.success ? "done" : "error", result }
-              : f,
-          ),
+          prev.map((f, i) => {
+            const payloadIdx = payloadIndexMap.indexOf(i);
+            if (payloadIdx === -1) return f;
+            const result = batchResult.results[payloadIdx];
+            if (!result) return f;
+            return {
+              ...f,
+              status: result.success ? "done" : "error",
+              result,
+            };
+          }),
         );
-      } catch (err: any) {
-        setFiles((prev) =>
-          prev.map((f, j) =>
-            j === i
-              ? {
-                  ...f,
-                  status: "error",
-                  result: {
-                    success: false,
-                    file_path: files[i].uri,
-                    description: "",
-                    category: "",
-                    has_events: false,
-                    error: err.message || "Failed to process file",
-                  },
-                }
-              : f,
-          ),
-        );
+        setProcessedCount(payloads.length);
+      }
+    } catch (err: any) {
+      // Batch failed — fall back to sequential
+      for (const i of selectedIndices) {
+        if (files[i].status === "done" || files[i].status === "error") continue;
+        try {
+          const base64 = await readAsStringAsync(files[i].uri, {
+            encoding: EncodingType.Base64,
+          });
+          const result = await api.ingest({
+            file_path: files[i].uri,
+            file_content_base64: base64,
+            filename: files[i].name,
+          });
+          setFiles((prev) =>
+            prev.map((f, j) =>
+              j === i
+                ? { ...f, status: result.success ? "done" : "error", result }
+                : f,
+            ),
+          );
+          setProcessedCount((c) => c + 1);
+        } catch (fallbackErr: any) {
+          setFiles((prev) =>
+            prev.map((f, j) =>
+              j === i
+                ? {
+                    ...f,
+                    status: "error",
+                    result: {
+                      success: false,
+                      file_path: files[i].uri,
+                      description: "",
+                      category: "",
+                      has_events: false,
+                      error: fallbackErr.message || "Failed to process file",
+                    },
+                  }
+                : f,
+            ),
+          );
+        }
       }
     }
 
@@ -169,6 +245,14 @@ export default function ScanScreen() {
     const doneCount = files.filter((f) => f.result?.success).length;
     if (doneCount > 0) {
       Alert.alert("Done", `Successfully ingested ${doneCount} file(s).`);
+
+      // Schedule push notifications for files with events
+      const filesWithEvents = files.filter(
+        (f) => f.result?.success && f.result?.has_events,
+      );
+      if (filesWithEvents.length > 0) {
+        scheduleEventNotifications(filesWithEvents);
+      }
     }
   };
 
@@ -188,22 +272,44 @@ export default function ScanScreen() {
         style={styles.scanButton}
         onPress={handleScanFolder}
         disabled={scanning || ingesting}
+        activeOpacity={0.7}
+        accessibilityLabel={
+          files.length > 0
+            ? "Scan another folder"
+            : "Select folder to scan for files"
+        }
+        accessibilityRole="button"
       >
         {scanning ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.scanButtonText}>
-            {files.length > 0 ? "Scan Another Folder" : "Select Folder to Scan"}
-          </Text>
+          <View style={styles.scanButtonContent}>
+            <Ionicons
+              name="folder-open"
+              size={22}
+              color="#fff"
+              style={{ marginRight: spacing.sm }}
+            />
+            <Text style={styles.scanButtonText}>
+              {files.length > 0
+                ? "Scan Another Folder"
+                : "Select Folder to Scan"}
+            </Text>
+          </View>
         )}
       </TouchableOpacity>
 
       <Text style={styles.hint}>
-        Pick a folder and MindVault will discover all supported files inside it.
+        Pick a folder to discover all supported files inside it.
       </Text>
 
       {files.length === 0 && !scanning && (
         <View style={styles.emptyState}>
+          <Ionicons
+            name="documents-outline"
+            size={64}
+            color={colors.textMuted}
+          />
           <Text style={styles.emptyText}>No files scanned yet</Text>
           <Text style={styles.emptySubtext}>
             Create a folder with your documents, then tap the button above to
@@ -219,79 +325,123 @@ export default function ScanScreen() {
               {selectedCount}/{files.length} selected
             </Text>
             <View style={styles.selectionButtons}>
-              <TouchableOpacity onPress={selectAll}>
+              <TouchableOpacity
+                onPress={selectAll}
+                activeOpacity={0.7}
+                accessibilityLabel="Select all files"
+                accessibilityRole="button"
+              >
                 <Text style={styles.selectionLink}>All</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={deselectAll}>
+              <TouchableOpacity
+                onPress={deselectAll}
+                activeOpacity={0.7}
+                accessibilityLabel="Deselect all files"
+                accessibilityRole="button"
+              >
                 <Text style={styles.selectionLink}>None</Text>
               </TouchableOpacity>
             </View>
           </View>
 
           {files.map((file, index) => (
-            <TouchableOpacity
-              key={`${file.name}-${index}`}
-              style={[
-                styles.fileCard,
-                file.selected && styles.fileCardSelected,
-                file.status === "done" && styles.fileCardDone,
-                file.status === "error" && styles.fileCardError,
-              ]}
-              onPress={() => toggleFile(index)}
-              disabled={ingesting}
-            >
-              <View style={styles.fileHeader}>
-                <View style={styles.checkbox}>
-                  {file.selected && <View style={styles.checkboxInner} />}
-                </View>
-                <View style={styles.fileInfo}>
-                  <Text style={styles.fileName} numberOfLines={1}>
-                    {file.name}
-                  </Text>
-                  <Text style={styles.fileExt}>
-                    {getExtension(file.name).toUpperCase().slice(1)}
-                  </Text>
-                </View>
-                {file.status === "processing" && (
-                  <ActivityIndicator size="small" color="#6c63ff" />
-                )}
-                {file.status === "done" && (
-                  <Text style={styles.doneLabel}>Done</Text>
-                )}
-                {file.status === "error" && (
-                  <Text style={styles.errorLabel}>Failed</Text>
-                )}
-              </View>
-
-              {file.result?.success && (
-                <View style={styles.resultInfo}>
-                  <Text style={styles.resultDesc} numberOfLines={2}>
-                    {file.result.description}
-                  </Text>
-                  <View style={styles.resultFooter}>
-                    <View
-                      style={[
-                        styles.badge,
-                        {
-                          backgroundColor: getBadgeColor(file.result.category),
-                        },
-                      ]}
-                    >
-                      <Text style={styles.badgeText}>
-                        {file.result.category}
-                      </Text>
-                    </View>
-                    {file.result.has_events && (
-                      <Text style={styles.eventsTag}>Has events</Text>
+            <FadeIn key={`${file.name}-${index}`} delay={index * 40}>
+              <TouchableOpacity
+                style={[
+                  styles.fileCard,
+                  file.selected && styles.fileCardSelected,
+                  file.status === "done" && styles.fileCardDone,
+                  file.status === "error" && styles.fileCardError,
+                ]}
+                onPress={() => toggleFile(index)}
+                disabled={ingesting}
+                activeOpacity={0.7}
+                accessibilityLabel={`${file.name}, ${file.selected ? "selected" : "not selected"}, ${file.status}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: file.selected }}
+              >
+                <View style={styles.fileHeader}>
+                  <View style={styles.checkbox}>
+                    {file.selected && (
+                      <Ionicons
+                        name="checkmark"
+                        size={14}
+                        color={colors.primary}
+                      />
                     )}
                   </View>
+                  <View style={styles.fileInfo}>
+                    <Text style={styles.fileName} numberOfLines={1}>
+                      {file.name}
+                    </Text>
+                    <Text style={styles.fileExt}>
+                      {getExtension(file.name).toUpperCase().slice(1)}
+                    </Text>
+                  </View>
+                  {file.status === "processing" && (
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  )}
+                  {file.status === "done" && (
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={20}
+                      color={colors.success}
+                    />
+                  )}
+                  {file.status === "error" && (
+                    <Ionicons
+                      name="close-circle"
+                      size={20}
+                      color={colors.danger}
+                    />
+                  )}
                 </View>
-              )}
 
-              {file.result && !file.result.success && file.result.error && (
-                <Text style={styles.errorText}>{file.result.error}</Text>
-              )}
-            </TouchableOpacity>
+                {file.result?.success && (
+                  <View style={styles.resultInfo}>
+                    <Text style={styles.resultDesc} numberOfLines={2}>
+                      {file.result.description}
+                    </Text>
+                    <View style={styles.resultFooter}>
+                      <View
+                        style={[
+                          styles.badge,
+                          {
+                            backgroundColor: `${getCategoryColor(file.result.category)}15`,
+                            borderColor: `${getCategoryColor(file.result.category)}40`,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.badgeText,
+                            {
+                              color: getCategoryColor(file.result.category),
+                            },
+                          ]}
+                        >
+                          {file.result.category}
+                        </Text>
+                      </View>
+                      {file.result.has_events && (
+                        <View style={styles.eventsTagRow}>
+                          <Ionicons
+                            name="calendar"
+                            size={12}
+                            color={colors.warning}
+                          />
+                          <Text style={styles.eventsTag}>Has events</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                )}
+
+                {file.result && !file.result.success && file.result.error && (
+                  <Text style={styles.errorText}>{file.result.error}</Text>
+                )}
+              </TouchableOpacity>
+            </FadeIn>
           ))}
 
           {pendingCount > 0 && (
@@ -299,11 +449,17 @@ export default function ScanScreen() {
               style={[styles.ingestButton, ingesting && styles.buttonDisabled]}
               onPress={handleIngest}
               disabled={ingesting}
+              activeOpacity={0.7}
+              accessibilityLabel={`Ingest ${pendingCount} files`}
+              accessibilityRole="button"
             >
               {ingesting ? (
                 <View style={styles.ingestingRow}>
                   <ActivityIndicator color="#fff" size="small" />
-                  <Text style={styles.ingestButtonText}> Processing...</Text>
+                  <Text style={styles.ingestButtonText}>
+                    {" "}
+                    Processing {processedCount} of {totalToProcess}...
+                  </Text>
                 </View>
               ) : (
                 <Text style={styles.ingestButtonText}>
@@ -318,121 +474,137 @@ export default function ScanScreen() {
   );
 }
 
-function getBadgeColor(category: string): string {
-  const colors: Record<string, string> = {
-    work: "#4a9eff",
-    study: "#ff9f43",
-    personal: "#54a0ff",
-    medical: "#ee5a24",
-    finance: "#2ecc71",
-    other: "#a0a0a0",
-  };
-  return colors[category] || colors.other;
-}
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f0f1a" },
-  content: { padding: 20, paddingBottom: 40 },
+  container: { flex: 1, backgroundColor: colors.background },
+  content: { padding: spacing.xl, paddingBottom: 40 },
   scanButton: {
-    backgroundColor: "#6c63ff",
-    borderRadius: 14,
-    paddingVertical: 16,
+    backgroundColor: colors.primary,
+    borderRadius: radii.xl,
+    paddingVertical: spacing.lg + 2,
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
-  scanButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  scanButtonContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  scanButtonText: { color: "#fff", ...typography.heading },
   hint: {
-    color: "#555",
+    color: colors.textMuted,
     fontSize: 13,
     textAlign: "center",
-    marginBottom: 20,
+    marginBottom: spacing.xl,
+    letterSpacing: 0.3,
   },
   emptyState: { alignItems: "center", paddingVertical: 60 },
-  emptyText: { color: "#a0a0b0", fontSize: 18, fontWeight: "600" },
+  emptyText: {
+    color: colors.textSecondary,
+    fontSize: 18,
+    fontWeight: "600",
+    marginTop: spacing.lg,
+  },
   emptySubtext: {
-    color: "#555",
+    color: colors.textDark,
     fontSize: 14,
-    marginTop: 8,
+    marginTop: spacing.sm,
     textAlign: "center",
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.xl,
   },
   selectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
-  countText: { color: "#a0a0b0", fontSize: 13 },
-  selectionButtons: { flexDirection: "row", gap: 16 },
-  selectionLink: { color: "#6c63ff", fontSize: 13, fontWeight: "600" },
+  countText: { color: colors.textSecondary, fontSize: 13 },
+  selectionButtons: { flexDirection: "row", gap: spacing.lg },
+  selectionLink: { color: colors.primary, fontSize: 13, fontWeight: "600" },
   fileCard: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
+    backgroundColor: colors.card,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.sm + 2,
     borderWidth: 1,
-    borderColor: "#2d2d44",
+    borderColor: colors.border,
   },
-  fileCardSelected: { borderColor: "#6c63ff55" },
-  fileCardDone: { borderColor: "#2ecc7155" },
-  fileCardError: { borderColor: "#e74c3c55" },
+  fileCardSelected: {
+    borderColor: `${colors.primary}50`,
+    backgroundColor: colors.cardElevated,
+  },
+  fileCardDone: {
+    borderColor: `${colors.success}40`,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.success,
+  },
+  fileCardError: {
+    borderColor: `${colors.danger}40`,
+    borderLeftWidth: 3,
+    borderLeftColor: colors.danger,
+  },
   fileHeader: { flexDirection: "row", alignItems: "center" },
   checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
+    width: 24,
+    height: 24,
+    borderRadius: radii.sm,
     borderWidth: 2,
-    borderColor: "#6c63ff",
+    borderColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 12,
-  },
-  checkboxInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 3,
-    backgroundColor: "#6c63ff",
+    marginRight: spacing.md,
   },
   fileInfo: { flex: 1 },
-  fileName: { color: "#e0e0e0", fontSize: 15, fontWeight: "600" },
-  fileExt: { color: "#666", fontSize: 12, marginTop: 2 },
-  doneLabel: { color: "#2ecc71", fontWeight: "700", fontSize: 13 },
-  errorLabel: { color: "#e74c3c", fontWeight: "700", fontSize: 13 },
+  fileName: { color: colors.textPrimary, fontSize: 15, fontWeight: "600" },
+  fileExt: {
+    color: colors.textMuted,
+    fontSize: 11,
+    marginTop: 3,
+    letterSpacing: 0.5,
+    fontWeight: "600",
+  },
   resultInfo: {
-    marginTop: 10,
-    paddingTop: 10,
+    marginTop: spacing.sm + 2,
+    paddingTop: spacing.sm + 2,
     borderTopWidth: 1,
-    borderTopColor: "#2d2d44",
+    borderTopColor: colors.border,
   },
   resultDesc: {
-    color: "#a0a0b0",
+    color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   resultFooter: { flexDirection: "row", alignItems: "center" },
-  badge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 2 },
+  badge: {
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderWidth: 1,
+  },
   badgeText: {
-    color: "#fff",
     fontSize: 10,
     fontWeight: "700",
     textTransform: "capitalize",
   },
+  eventsTagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: spacing.sm,
+    gap: 4,
+  },
   eventsTag: {
-    color: "#f39c12",
+    color: colors.warning,
     fontSize: 11,
     fontWeight: "600",
-    marginLeft: 8,
   },
-  errorText: { color: "#e74c3c", fontSize: 12, marginTop: 8 },
+  errorText: { color: colors.danger, fontSize: 12, marginTop: spacing.sm },
   ingestButton: {
-    backgroundColor: "#2ecc71",
-    borderRadius: 14,
-    paddingVertical: 16,
+    backgroundColor: colors.accent,
+    borderRadius: radii.xl,
+    paddingVertical: spacing.lg + 2,
     alignItems: "center",
-    marginTop: 8,
+    marginTop: spacing.lg,
   },
   buttonDisabled: { opacity: 0.5 },
   ingestingRow: { flexDirection: "row", alignItems: "center" },
-  ingestButtonText: { color: "#fff", fontSize: 17, fontWeight: "700" },
+  ingestButtonText: { color: "#fff", ...typography.heading },
 });

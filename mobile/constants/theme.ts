@@ -1,46 +1,53 @@
-// MindVault Design System — single source of truth for colors, spacing, typography
+// Forgot Me Design System — single source of truth for colors, spacing, typography
 
 export const colors = {
   // Core palette
-  primary: '#6c63ff',
-  primaryMuted: '#6c63ff33',
-  background: '#0f0f1a',
-  card: '#1a1a2e',
-  border: '#2d2d44',
+  primary: "#7c6fff",
+  primaryMuted: "#7c6fff20",
+  accent: "#00d4aa",
+  accentMuted: "#00d4aa20",
+  background: "#0a0a14",
+  card: "#12122a",
+  cardElevated: "#1a1a36",
+  border: "#252545",
 
   // Text
-  textPrimary: '#e0e0e0',
-  textSecondary: '#a0a0b0',
-  textMuted: '#666',
-  textDark: '#555',
+  textPrimary: "#eaeaef",
+  textSecondary: "#a8a8be",
+  textMuted: "#5e5e78",
+  textDark: "#4a4a60",
 
   // Status
-  success: '#2ecc71',
-  warning: '#f39c12',
-  danger: '#e74c3c',
-  info: '#4a9eff',
+  success: "#00d68f",
+  warning: "#ffaa2c",
+  danger: "#ff4d6a",
+  info: "#4a9eff",
 
   // Category badges
-  categoryWork: '#4a9eff',
-  categoryStudy: '#ff9f43',
-  categoryPersonal: '#54a0ff',
-  categoryMedical: '#ee5a24',
-  categoryFinance: '#2ecc71',
-  categoryOther: '#a0a0a0',
+  categoryWork: "#4a9eff",
+  categoryStudy: "#ff9f43",
+  categoryPersonal: "#54a0ff",
+  categoryMedical: "#ee5a24",
+  categoryFinance: "#00d68f",
+  categoryOther: "#8888a0",
 
   // Urgency
-  urgencyToday: '#e74c3c',
-  urgencyTomorrow: '#f39c12',
-  urgencyThisWeek: '#f1c40f',
-  urgencyDefault: '#444',
+  urgencyToday: "#ff4d6a",
+  urgencyTomorrow: "#ffaa2c",
+  urgencyThisWeek: "#ffd32a",
+  urgencyDefault: "#3a3a50",
 
   // Modality icon tints
-  modalityPdf: '#e74c3c',
-  modalityImage: '#3498db',
-  modalityAudio: '#9b59b6',
-  modalityText: '#2ecc71',
-  modalityCalendar: '#f39c12',
-  modalityEmail: '#1abc9c',
+  modalityPdf: "#ff4d6a",
+  modalityImage: "#4a9eff",
+  modalityAudio: "#a78bfa",
+  modalityText: "#00d68f",
+  modalityCalendar: "#ffaa2c",
+  modalityEmail: "#00d4aa",
+
+  // Gradient helpers
+  gradientStart: "#7c6fff",
+  gradientEnd: "#00d4aa",
 } as const;
 
 export const CATEGORY_COLORS: Record<string, string> = {
@@ -54,6 +61,19 @@ export const CATEGORY_COLORS: Record<string, string> = {
 
 export function getCategoryColor(category: string): string {
   return CATEGORY_COLORS[category] || CATEGORY_COLORS.other;
+}
+
+export const CATEGORY_ICONS: Record<string, string> = {
+  work: "briefcase",
+  study: "school",
+  personal: "person",
+  medical: "medical",
+  finance: "card",
+  other: "ellipsis-horizontal",
+};
+
+export function getCategoryIcon(category: string): string {
+  return CATEGORY_ICONS[category] || CATEGORY_ICONS.other;
 }
 
 export const spacing = {
@@ -70,21 +90,21 @@ export const radii = {
   sm: 6,
   md: 8,
   lg: 12,
-  xl: 14,
-  pill: 20,
+  xl: 16,
+  pill: 24,
 } as const;
 
 export const typography = {
-  hero: { fontSize: 36, fontWeight: '800' as const },
-  title: { fontSize: 28, fontWeight: '800' as const },
-  heading: { fontSize: 18, fontWeight: '600' as const },
+  hero: { fontSize: 34, fontWeight: "800" as const },
+  title: { fontSize: 26, fontWeight: "800" as const },
+  heading: { fontSize: 18, fontWeight: "700" as const },
   body: { fontSize: 15, lineHeight: 22 },
   bodySmall: { fontSize: 13, lineHeight: 18 },
   caption: { fontSize: 11 },
   label: {
-    fontSize: 14,
-    fontWeight: '700' as const,
-    textTransform: 'uppercase' as const,
-    letterSpacing: 1,
+    fontSize: 13,
+    fontWeight: "700" as const,
+    textTransform: "uppercase" as const,
+    letterSpacing: 1.2,
   },
 } as const;

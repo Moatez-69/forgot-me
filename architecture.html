@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Forgot Me — System Architecture</title>
+        <style>
+            @import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                background: #f0f0f5;
+                font-family:
+                    "Inter",
+                    -apple-system,
+                    sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+                padding: 30px;
+                overflow: hidden;
+            }
+
+            .canvas {
+                width: 1440px;
+                height: 900px;
+                background: #ffffff;
+                position: relative;
+                border-radius: 20px;
+                overflow: hidden;
+                box-shadow: 0 4px 40px rgba(0, 0, 0, 0.08);
+            }
+
+            /* Subtle grid background */
+            .canvas::before {
+                content: "";
+                position: absolute;
+                inset: 0;
+                background-image:
+                    linear-gradient(
+                        rgba(124, 111, 255, 0.04) 1px,
+                        transparent 1px
+                    ),
+                    linear-gradient(
+                        90deg,
+                        rgba(124, 111, 255, 0.04) 1px,
+                        transparent 1px
+                    );
+                background-size: 40px 40px;
+                pointer-events: none;
+            }
+
+            /* Glow effects — soft pastel blobs */
+            .glow-purple {
+                position: absolute;
+                width: 400px;
+                height: 400px;
+                background: radial-gradient(
+                    circle,
+                    rgba(124, 111, 255, 0.06) 0%,
+                    transparent 70%
+                );
+                pointer-events: none;
+            }
+
+            .glow-teal {
+                position: absolute;
+                width: 350px;
+                height: 350px;
+                background: radial-gradient(
+                    circle,
+                    rgba(0, 180, 140, 0.05) 0%,
+                    transparent 70%
+                );
+                pointer-events: none;
+            }
+
+            /* Title */
+            .title-area {
+                position: absolute;
+                top: 28px;
+                left: 50px;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+            }
+
+            .logo-icon {
+                width: 40px;
+                height: 40px;
+                background: linear-gradient(135deg, #7c6fff, #5b4ecf);
+                border-radius: 12px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 20px;
+                color: #fff;
+                box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
+            }
+
+            .title-text h1 {
+                font-size: 22px;
+                font-weight: 800;
+                color: #1a1a2e;
+                letter-spacing: -0.3px;
+            }
+
+            .title-text p {
+                font-size: 11px;
+                font-weight: 600;
+                color: #8888a0;
+                letter-spacing: 1.5px;
+                text-transform: uppercase;
+                margin-top: 1px;
+            }
+
+            /* Top-right badge */
+            .arch-badge {
+                position: absolute;
+                top: 34px;
+                right: 50px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .badge-item {
+                padding: 5px 12px;
+                border-radius: 20px;
+                font-size: 10px;
+                font-weight: 700;
+                letter-spacing: 0.5px;
+                border: 1px solid;
+            }
+
+            .badge-local {
+                background: #e6faf4;
+                border-color: #b3edd9;
+                color: #009973;
+            }
+            .badge-docker {
+                background: #e8f2ff;
+                border-color: #b3d4ff;
+                color: #2a7de1;
+            }
+            .badge-ai {
+                background: #f0ecff;
+                border-color: #cfc4ff;
+                color: #6b5ce7;
+            }
+
+            /* Architecture nodes */
+            .node {
+                position: absolute;
+                background: #ffffff;
+                border: 1px solid #e2e2ee;
+                border-radius: 14px;
+                padding: 16px 18px;
+                transition: all 0.2s;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            }
+
+            .node:hover {
+                border-color: #c8c8dc;
+                box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+            }
+
+            .node-header {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 10px;
+            }
+
+            .node-icon {
+                width: 32px;
+                height: 32px;
+                border-radius: 9px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 15px;
+                flex-shrink: 0;
+            }
+
+            .node-name {
+                font-size: 13px;
+                font-weight: 700;
+                color: #1a1a2e;
+                line-height: 1.1;
+            }
+
+            .node-tech {
+                font-size: 10px;
+                font-weight: 500;
+                color: #8888a0;
+                margin-top: 2px;
+            }
+
+            .node-items {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+
+            .node-item {
+                font-size: 10.5px;
+                font-weight: 500;
+                color: #5c5c78;
+                padding-left: 12px;
+                position: relative;
+                line-height: 1.5;
+            }
+
+            .node-item::before {
+                content: "";
+                position: absolute;
+                left: 0;
+                top: 7px;
+                width: 5px;
+                height: 5px;
+                border-radius: 50%;
+            }
+
+            /* Color variants */
+            .n-purple {
+                border-left: 3px solid #7c6fff;
+            }
+            .n-purple .node-icon {
+                background: #f0ecff;
+                color: #7c6fff;
+            }
+            .n-purple .node-item::before {
+                background: #b3a6ff;
+            }
+
+            .n-teal {
+                border-left: 3px solid #00b48c;
+            }
+            .n-teal .node-icon {
+                background: #e6faf4;
+                color: #00b48c;
+            }
+            .n-teal .node-item::before {
+                background: #66d4b8;
+            }
+
+            .n-blue {
+                border-left: 3px solid #3b8bff;
+            }
+            .n-blue .node-icon {
+                background: #e8f2ff;
+                color: #3b8bff;
+            }
+            .n-blue .node-item::before {
+                background: #8cb8ff;
+            }
+
+            .n-orange {
+                border-left: 3px solid #e8922a;
+            }
+            .n-orange .node-icon {
+                background: #fff5e6;
+                color: #e8922a;
+            }
+            .n-orange .node-item::before {
+                background: #f0bb6e;
+            }
+
+            .n-green {
+                border-left: 3px solid #00b875;
+            }
+            .n-green .node-icon {
+                background: #e6faf0;
+                color: #00b875;
+            }
+            .n-green .node-item::before {
+                background: #66d4a8;
+            }
+
+            .n-lavender {
+                border-left: 3px solid #8b6cf5;
+            }
+            .n-lavender .node-icon {
+                background: #f0ecff;
+                color: #8b6cf5;
+            }
+            .n-lavender .node-item::before {
+                background: #b8a6f7;
+            }
+
+            .n-red {
+                border-left: 3px solid #e54466;
+            }
+            .n-red .node-icon {
+                background: #ffeaef;
+                color: #e54466;
+            }
+            .n-red .node-item::before {
+                background: #f08898;
+            }
+
+            .n-cyan {
+                border-left: 3px solid #0ea5c0;
+            }
+            .n-cyan .node-icon {
+                background: #e6f8fb;
+                color: #0ea5c0;
+            }
+            .n-cyan .node-item::before {
+                background: #6ecfe0;
+            }
+
+            /* Layer labels */
+            .layer-label {
+                position: absolute;
+                font-size: 9px;
+                font-weight: 700;
+                text-transform: uppercase;
+                letter-spacing: 2.5px;
+                color: #c8c8dc;
+                writing-mode: vertical-rl;
+                text-orientation: mixed;
+                transform: rotate(180deg);
+            }
+
+            /* SVG connections */
+            .connections {
+                position: absolute;
+                inset: 0;
+                pointer-events: none;
+            }
+
+            .conn-line {
+                fill: none;
+                stroke-width: 1.5;
+                opacity: 0.45;
+            }
+
+            .conn-dot {
+                r: 3;
+                opacity: 0.7;
+            }
+
+            /* Data flow pipeline at bottom */
+            .pipeline {
+                position: absolute;
+                bottom: 28px;
+                left: 50px;
+                right: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 0;
+            }
+
+            .pipe-step {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                padding: 7px 14px;
+                background: #f8f8fc;
+                border: 1px solid #e2e2ee;
+                font-size: 10px;
+                font-weight: 600;
+                color: #5c5c78;
+                white-space: nowrap;
+            }
+
+            .pipe-step:first-child {
+                border-radius: 20px 0 0 20px;
+            }
+            .pipe-step:last-child {
+                border-radius: 0 20px 20px 0;
+            }
+
+            .pipe-step .pipe-icon {
+                font-size: 13px;
+            }
+
+            /* Animated pulse on key nodes */
+            @keyframes pulse {
+                0%,
+                100% {
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+                }
+                50% {
+                    box-shadow: 0 4px 24px rgba(0, 180, 140, 0.12);
+                }
+            }
+
+            .node.highlight {
+                animation: pulse 3s ease-in-out infinite;
+            }
+
+            /* Inline tech badges */
+            .tech-badge {
+                border-radius: 8px;
+                padding: 6px 12px;
+                position: absolute;
+            }
+
+            .tech-badge-title {
+                font-size: 9px;
+                font-weight: 700;
+                letter-spacing: 1.5px;
+                text-transform: uppercase;
+            }
+
+            .tech-badge-sub {
+                font-size: 8px;
+                margin-top: 2px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="canvas">
+            <!-- Ambient glow -->
+            <div class="glow-purple" style="top: -100px; left: -50px"></div>
+            <div class="glow-teal" style="bottom: -80px; right: -30px"></div>
+            <div
+                class="glow-purple"
+                style="
+                    top: 200px;
+                    right: 100px;
+                    width: 250px;
+                    height: 250px;
+                    opacity: 0.5;
+                "
+            ></div>
+
+            <!-- Title -->
+            <div class="title-area">
+                <div class="logo-icon">?</div>
+                <div class="title-text">
+                    <h1>Forgot Me</h1>
+                    <p>System Architecture</p>
+                </div>
+            </div>
+
+            <!-- Top-right badges -->
+            <div class="arch-badge">
+                <span class="badge-item badge-local">LOCAL-FIRST</span>
+                <span class="badge-item badge-docker">DOCKER</span>
+                <span class="badge-item badge-ai">AI-POWERED</span>
+            </div>
+
+            <!-- Layer labels -->
+            <span class="layer-label" style="left: 18px; top: 130px"
+                >CLIENT</span
+            >
+            <span class="layer-label" style="left: 18px; top: 340px">API</span>
+            <span class="layer-label" style="left: 18px; top: 520px">CORE</span>
+            <span class="layer-label" style="left: 18px; top: 700px">DATA</span>
+
+            <!-- SVG Connection Lines -->
+            <svg class="connections" viewBox="0 0 1440 900">
+                <!-- Mobile to Backend -->
+                <path
+                    d="M 400 245 Q 400 280 500 310"
+                    class="conn-line"
+                    stroke="#7c6fff"
+                    stroke-dasharray="4,4"
+                />
+                <path
+                    d="M 550 245 Q 550 280 560 310"
+                    class="conn-line"
+                    stroke="#7c6fff"
+                    stroke-dasharray="4,4"
+                />
+                <path
+                    d="M 700 245 Q 700 280 630 310"
+                    class="conn-line"
+                    stroke="#7c6fff"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- Backend to Processors -->
+                <path
+                    d="M 490 420 Q 430 460 280 490"
+                    class="conn-line"
+                    stroke="#00b48c"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- Backend to LLM -->
+                <path
+                    d="M 620 420 Q 680 460 750 490"
+                    class="conn-line"
+                    stroke="#00b48c"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- Processors to LLM -->
+                <path
+                    d="M 410 570 Q 550 590 700 540"
+                    class="conn-line"
+                    stroke="#e8922a"
+                    stroke-dasharray="3,5"
+                    opacity="0.3"
+                />
+
+                <!-- LLM to ChromaDB -->
+                <path
+                    d="M 780 620 Q 680 660 420 680"
+                    class="conn-line"
+                    stroke="#8b6cf5"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- Backend to SQLite -->
+                <path
+                    d="M 600 420 Q 720 550 750 680"
+                    class="conn-line"
+                    stroke="#00b48c"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- SQLite to Discord -->
+                <path
+                    d="M 900 720 Q 1000 720 1080 700"
+                    class="conn-line"
+                    stroke="#e54466"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- Backend to Knowledge Graph -->
+                <path
+                    d="M 650 400 Q 1000 420 1100 490"
+                    class="conn-line"
+                    stroke="#00b48c"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- ChromaDB to Knowledge Graph -->
+                <path
+                    d="M 430 750 Q 700 790 1080 620"
+                    class="conn-line"
+                    stroke="#00b875"
+                    stroke-dasharray="3,5"
+                    opacity="0.3"
+                />
+
+                <!-- Ollama external line -->
+                <path
+                    d="M 900 520 Q 1000 500 1090 510"
+                    class="conn-line"
+                    stroke="#e8922a"
+                    stroke-dasharray="4,4"
+                />
+
+                <!-- Connection dots -->
+                <circle cx="400" cy="245" class="conn-dot" fill="#7c6fff" />
+                <circle cx="550" cy="245" class="conn-dot" fill="#7c6fff" />
+                <circle cx="700" cy="245" class="conn-dot" fill="#7c6fff" />
+                <circle cx="490" cy="420" class="conn-dot" fill="#00b48c" />
+                <circle cx="620" cy="420" class="conn-dot" fill="#00b48c" />
+                <circle cx="280" cy="490" class="conn-dot" fill="#3b8bff" />
+                <circle cx="750" cy="490" class="conn-dot" fill="#e8922a" />
+                <circle cx="420" cy="680" class="conn-dot" fill="#00b875" />
+                <circle cx="750" cy="680" class="conn-dot" fill="#8b6cf5" />
+                <circle cx="1080" cy="700" class="conn-dot" fill="#e54466" />
+            </svg>
+
+            <!-- ====== NODES ====== -->
+
+            <!-- MOBILE APP SCREENS -->
+            <div
+                class="node n-purple"
+                style="left: 300px; top: 100px; width: 175px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128172;</div>
+                    <div>
+                        <div class="node-name">Home</div>
+                        <div class="node-tech">Conversational Q&A</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">Chat with your files</div>
+                    <div class="node-item">Self-verified answers</div>
+                    <div class="node-item">Source citations</div>
+                </div>
+            </div>
+
+            <div
+                class="node n-purple"
+                style="left: 490px; top: 100px; width: 175px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128269;</div>
+                    <div>
+                        <div class="node-name">Scan & Ingest</div>
+                        <div class="node-tech">File Discovery</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">Folder scanning</div>
+                    <div class="node-item">Batch ingestion</div>
+                    <div class="node-item">6 file types</div>
+                </div>
+            </div>
+
+            <div
+                class="node n-purple"
+                style="left: 680px; top: 100px; width: 175px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128218;</div>
+                    <div>
+                        <div class="node-name">Memories</div>
+                        <div class="node-tech">Organized Library</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">Category grouping</div>
+                    <div class="node-item">Search & filter</div>
+                    <div class="node-item">Delete management</div>
+                </div>
+            </div>
+
+            <div
+                class="node n-purple"
+                style="left: 870px; top: 100px; width: 175px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128197;</div>
+                    <div>
+                        <div class="node-name">Events</div>
+                        <div class="node-tech">Smart Calendar</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">Auto-extracted dates</div>
+                    <div class="node-item">Discord alerts</div>
+                    <div class="node-item">Cleanup tools</div>
+                </div>
+            </div>
+
+            <div
+                class="node n-purple"
+                style="left: 1060px; top: 100px; width: 175px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128296;</div>
+                    <div>
+                        <div class="node-name">Settings</div>
+                        <div class="node-tech">Configuration</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">Backend connection</div>
+                    <div class="node-item">Webhook setup</div>
+                    <div class="node-item">Health check</div>
+                </div>
+            </div>
+
+            <!-- Expo badge -->
+            <div
+                class="tech-badge"
+                style="
+                    left: 190px;
+                    top: 140px;
+                    background: #f0ecff;
+                    border: 1px solid #d8d0ff;
+                "
+            >
+                <div class="tech-badge-title" style="color: #6b5ce7">
+                    Expo + React Native
+                </div>
+                <div class="tech-badge-sub" style="color: #8888a0">
+                    TypeScript / expo-router
+                </div>
+            </div>
+
+            <!-- BACKEND API -->
+            <div
+                class="node n-teal highlight"
+                style="left: 390px; top: 310px; width: 290px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#9889;</div>
+                    <div>
+                        <div class="node-name">FastAPI Backend</div>
+                        <div class="node-tech">
+                            Python 3.12 / Uvicorn / async
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 20px">
+                    <div class="node-items" style="flex: 1">
+                        <div class="node-item">POST /ingest/batch</div>
+                        <div class="node-item">POST /query</div>
+                        <div class="node-item">GET /memories</div>
+                        <div class="node-item">GET /notifications</div>
+                    </div>
+                    <div class="node-items" style="flex: 1">
+                        <div class="node-item">GET /graph</div>
+                        <div class="node-item">CRUD /webhooks</div>
+                        <div class="node-item">DELETE /memories</div>
+                        <div class="node-item">GET /health</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Docker badge near backend -->
+            <div
+                class="tech-badge"
+                style="
+                    left: 695px;
+                    top: 330px;
+                    background: #e8f2ff;
+                    border: 1px solid #b3d4ff;
+                "
+            >
+                <div class="tech-badge-title" style="color: #2a7de1">
+                    &#128051; DOCKER
+                </div>
+                <div class="tech-badge-sub" style="color: #8888a0">
+                    Containerized
+                </div>
+            </div>
+
+            <!-- FILE PROCESSORS -->
+            <div
+                class="node n-blue"
+                style="left: 80px; top: 490px; width: 340px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128196;</div>
+                    <div>
+                        <div class="node-name">Multimodal Processors</div>
+                        <div class="node-tech">Content Extraction Pipeline</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px">
+                    <div class="node-items" style="flex: 1">
+                        <div class="node-item">
+                            PDF (PyMuPDF + Tesseract OCR)
+                        </div>
+                        <div class="node-item">Images (BLIP captioning)</div>
+                        <div class="node-item">Audio (OpenAI Whisper)</div>
+                    </div>
+                    <div class="node-items" style="flex: 1">
+                        <div class="node-item">Text / Markdown / DOCX</div>
+                        <div class="node-item">Calendar (.ics parsing)</div>
+                        <div class="node-item">Email (.eml parsing)</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- LLM SERVICE -->
+            <div
+                class="node n-orange"
+                style="left: 530px; top: 490px; width: 340px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#129504;</div>
+                    <div>
+                        <div class="node-name">AI Services</div>
+                        <div class="node-tech">Local LLM + Embeddings</div>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 16px">
+                    <div class="node-items" style="flex: 1">
+                        <div class="node-item">Description generation</div>
+                        <div class="node-item">Category classification</div>
+                        <div class="node-item">Event/date extraction</div>
+                    </div>
+                    <div class="node-items" style="flex: 1">
+                        <div class="node-item">Conversational Q&A</div>
+                        <div class="node-item">Self-verification (RAG)</div>
+                        <div class="node-item">384-dim embeddings</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OLLAMA -->
+            <div
+                class="node n-orange"
+                style="left: 1090px; top: 490px; width: 175px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#127987;</div>
+                    <div>
+                        <div class="node-name">Ollama</div>
+                        <div class="node-tech">Local LLM Runtime</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">Qwen2.5-3B model</div>
+                    <div class="node-item">JSON-mode output</div>
+                    <div class="node-item">Host network access</div>
+                </div>
+            </div>
+
+            <!-- KNOWLEDGE GRAPH -->
+            <div
+                class="node n-cyan"
+                style="left: 1090px; top: 620px; width: 175px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128472;</div>
+                    <div>
+                        <div class="node-name">Knowledge Graph</div>
+                        <div class="node-tech">Computed at query time</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">File nodes & categories</div>
+                    <div class="node-item">Similarity edges (>0.7)</div>
+                    <div class="node-item">Cosine distance</div>
+                </div>
+            </div>
+
+            <!-- CHROMADB -->
+            <div
+                class="node n-green"
+                style="left: 140px; top: 680px; width: 280px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128200;</div>
+                    <div>
+                        <div class="node-name">ChromaDB</div>
+                        <div class="node-tech">
+                            Vector Store — Persistent Volume
+                        </div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">
+                        all-MiniLM-L6-v2 sentence transformer
+                    </div>
+                    <div class="node-item">
+                        Semantic search (cosine similarity)
+                    </div>
+                    <div class="node-item">
+                        Document metadata + content snippets
+                    </div>
+                </div>
+            </div>
+
+            <!-- SQLITE -->
+            <div
+                class="node n-lavender"
+                style="left: 530px; top: 680px; width: 260px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128451;</div>
+                    <div>
+                        <div class="node-name">SQLite</div>
+                        <div class="node-tech">
+                            aiosqlite — Async Persistence
+                        </div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">
+                        Events table (auto-extracted dates)
+                    </div>
+                    <div class="node-item">Webhooks table (Discord URLs)</div>
+                    <div class="node-item">Deduplication by title+source</div>
+                </div>
+            </div>
+
+            <!-- DISCORD -->
+            <div
+                class="node n-red"
+                style="left: 900px; top: 680px; width: 180px"
+            >
+                <div class="node-header">
+                    <div class="node-icon">&#128276;</div>
+                    <div>
+                        <div class="node-name">Discord</div>
+                        <div class="node-tech">Webhook Integration</div>
+                    </div>
+                </div>
+                <div class="node-items">
+                    <div class="node-item">Rich embed notifications</div>
+                    <div class="node-item">Auto-trigger (24h window)</div>
+                    <div class="node-item">Test & manage from app</div>
+                </div>
+            </div>
+
+            <!-- DATA FLOW PIPELINE -->
+            <div class="pipeline">
+                <div class="pipe-step" style="border-radius: 20px 0 0 20px">
+                    <span class="pipe-icon">&#128241;</span> Select Files
+                </div>
+                <div class="pipe-step">
+                    <span class="pipe-icon">&#128228;</span> Base64 Upload
+                </div>
+                <div class="pipe-step">
+                    <span class="pipe-icon">&#128196;</span> Extract Content
+                </div>
+                <div class="pipe-step">
+                    <span class="pipe-icon">&#129504;</span> LLM Analyze
+                </div>
+                <div class="pipe-step">
+                    <span class="pipe-icon">&#128200;</span> Embed (384-d)
+                </div>
+                <div class="pipe-step">
+                    <span class="pipe-icon">&#128269;</span> Semantic Search
+                </div>
+                <div class="pipe-step" style="border-radius: 0 20px 20px 0">
+                    <span class="pipe-icon">&#10003;</span> Verified Answer
+                </div>
+            </div>
+        </div>
+    </body>
+</html>

@@ -6,26 +6,43 @@ import os
 from contextlib import asynccontextmanager
 
 from agents import storage_agent
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from models.schemas import (
     BatchIngestRequest,
     BatchIngestResponse,
+    DeleteResponse,
+    EventDeleteResponse,
+    GraphEdge,
+    GraphNode,
+    GraphResponse,
+    GraphStatsResponse,
     HealthResponse,
     IngestRequest,
     IngestResult,
     MemoriesResponse,
+    MemoryItem,
     NotificationEvent,
     NotificationsResponse,
     QueryRequest,
     QueryResponse,
+    RelatedFilesResponse,
     ScannedFile,
     ScanRequest,
     ScanResponse,
     ServiceStatus,
     SourceFile,
+    WebhookCreate,
+    WebhookResponse,
+    WebhooksListResponse,
 )
 from services import llm_service, notif_service, vector_store
+from services.notif_service import (
+    delete_webhook,
+    get_webhooks,
+    save_webhook,
+    trigger_webhooks,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -166,19 +183,19 @@ async def query_files(request: QueryRequest):
         )
 
     # Smart relevance filtering:
-    # 1. Best match must be under 1.0 (cosine distance) to be useful at all
-    # 2. Only include other results within 0.15 of the best match
+    # 1. Best match must be under 1.5 (cosine distance) to be useful at all
+    # 2. Only include other results within 0.25 of the best match
     #    This drops the "long tail" of unrelated files
     best_distance = docs[0].get("distance", 2.0)
 
-    if best_distance > 1.0:
+    if best_distance > 1.5:
         return QueryResponse(
             answer="I couldn't find relevant information in your files.",
             sources=[],
             verified=True,
         )
 
-    relevant_docs = [d for d in docs if d.get("distance", 2.0) <= best_distance + 0.15]
+    relevant_docs = [d for d in docs if d.get("distance", 2.0) <= best_distance + 0.25]
 
     # Build context with content snippets so the LLM can answer specific questions
     context_parts = []
@@ -196,13 +213,23 @@ async def query_files(request: QueryRequest):
                 file_path=doc.get("file_path", ""),
                 description=doc.get("description", ""),
                 category=doc.get("category", ""),
+                modality=doc.get("modality", ""),
+                doc_id=doc.get("doc_id", ""),
+                thumbnail=doc.get("thumbnail", ""),
+                content_snippet=doc.get("content_snippet", ""),
             )
         )
 
     context = "\n\n---\n\n".join(context_parts)
 
+    logger.info(
+        f"Query: '{request.question}' — {len(relevant_docs)} relevant docs, best_distance={best_distance:.3f}"
+    )
+
     # Generate answer using LLM
-    answer = await llm_service.answer_query(request.question, context)
+    answer = await llm_service.answer_query(
+        request.question, context, request.conversation_history
+    )
 
     # Self-verification: check if answer is grounded in context
     verified = await llm_service.verify_answer(request.question, context, answer)
@@ -218,12 +245,16 @@ async def query_files(request: QueryRequest):
 async def get_memories(
     category: str | None = None,
     modality: str | None = None,
+    search: str | None = None,
     limit: int = 50,
 ):
     """Retrieve stored memories with optional filtering."""
-    memories = vector_store.get_all_memories(
-        category=category, modality=modality, limit=limit
-    )
+    if search:
+        memories = vector_store.search_memories(search, category=category, limit=limit)
+    else:
+        memories = vector_store.get_all_memories(
+            category=category, modality=modality, limit=limit
+        )
     return MemoriesResponse(memories=memories, total=len(memories))
 
 
@@ -290,3 +321,278 @@ async def health_check():
     overall = "healthy" if all_ok else ("degraded" if any_ok else "unhealthy")
 
     return HealthResponse(status=overall, services=services)
+
+
+# --- GET /files/{doc_id} ---
+@app.get("/files/{doc_id}")
+async def get_file_metadata(doc_id: str):
+    """Get file metadata by document ID."""
+    doc = vector_store.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {
+        "file_name": doc.get("file_name", ""),
+        "file_path": doc.get("file_path", ""),
+        "description": doc.get("description", ""),
+        "category": doc.get("category", ""),
+        "modality": doc.get("modality", ""),
+        "summary": doc.get("summary", ""),
+        "content_snippet": doc.get("content_snippet", ""),
+        "thumbnail": doc.get("thumbnail", ""),
+        "timestamp": doc.get("timestamp", ""),
+        "has_events": doc.get("has_events", False),
+        "doc_id": doc_id,
+    }
+
+
+# --- DELETE /memories/{doc_id} ---
+@app.delete("/memories/{doc_id}", response_model=DeleteResponse)
+async def delete_memory(doc_id: str):
+    """Delete a memory and its associated events."""
+    doc = vector_store.get_document(doc_id)
+    if not doc:
+        return DeleteResponse(success=False, message="Document not found")
+
+    file_path = doc.get("file_path", "")
+    deleted = vector_store.delete_document(doc_id)
+    if not deleted:
+        return DeleteResponse(
+            success=False, message="Failed to delete from vector store"
+        )
+
+    # Cascade: delete associated events
+    if file_path:
+        await notif_service.delete_events_by_source(file_path)
+
+    return DeleteResponse(
+        success=True, message=f"Deleted {doc.get('file_name', doc_id)}"
+    )
+
+
+# --- DELETE /events/{event_id} ---
+@app.delete("/events/{event_id}", response_model=EventDeleteResponse)
+async def delete_event(event_id: int):
+    """Delete a single event."""
+    deleted = await notif_service.delete_event(event_id)
+    return EventDeleteResponse(success=deleted, deleted_count=1 if deleted else 0)
+
+
+# --- POST /events/cleanup ---
+@app.post("/events/cleanup", response_model=EventDeleteResponse)
+async def cleanup_events():
+    """Delete all past events."""
+    count = await notif_service.delete_past_events()
+    return EventDeleteResponse(success=True, deleted_count=count)
+
+
+# --- GET /graph ---
+@app.get("/graph", response_model=GraphResponse)
+async def get_graph():
+    """Build a knowledge graph from all documents."""
+    import numpy as np
+
+    all_docs = vector_store.get_all_documents_with_metadata()
+
+    nodes = []
+    edges = []
+    categories_seen = set()
+
+    for doc in all_docs:
+        doc_id = doc.get("doc_id", "")
+        category = doc.get("category", "other")
+
+        # File node
+        nodes.append(
+            GraphNode(
+                id=doc_id,
+                type="file",
+                label=doc.get("file_name", ""),
+                metadata={
+                    "category": category,
+                    "modality": doc.get("modality", ""),
+                    "summary": doc.get("summary", ""),
+                    "description": doc.get("description", ""),
+                },
+            )
+        )
+
+        # Category edge
+        if category not in categories_seen:
+            categories_seen.add(category)
+            nodes.append(
+                GraphNode(
+                    id=f"cat_{category}",
+                    type="category",
+                    label=category,
+                )
+            )
+        edges.append(
+            GraphEdge(
+                source=doc_id,
+                target=f"cat_{category}",
+                relationship="belongs_to",
+            )
+        )
+
+    # Compute similarity edges between files
+    doc_embeddings = [
+        (d.get("doc_id", ""), d.get("_embedding"))
+        for d in all_docs
+        if d.get("_embedding")
+    ]
+    for i in range(len(doc_embeddings)):
+        for j in range(i + 1, len(doc_embeddings)):
+            id_a, emb_a = doc_embeddings[i]
+            id_b, emb_b = doc_embeddings[j]
+            if emb_a is not None and emb_b is not None:
+                # Cosine similarity
+                a = np.array(emb_a)
+                b = np.array(emb_b)
+                sim = float(
+                    np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-9)
+                )
+                if sim > 0.7:
+                    edges.append(
+                        GraphEdge(
+                            source=id_a,
+                            target=id_b,
+                            relationship="similar",
+                            weight=round(sim, 3),
+                        )
+                    )
+
+    return GraphResponse(
+        nodes=nodes,
+        edges=edges,
+        node_count=len(nodes),
+        edge_count=len(edges),
+    )
+
+
+# --- GET /graph/stats ---
+@app.get("/graph/stats", response_model=GraphStatsResponse)
+async def get_graph_stats():
+    """Get graph statistics."""
+    all_docs = vector_store.get_all_documents_with_metadata()
+    categories = set(d.get("category", "other") for d in all_docs)
+    return GraphStatsResponse(
+        total_nodes=len(all_docs) + len(categories),
+        total_edges=len(all_docs),  # At minimum, one category edge per file
+        file_nodes=len(all_docs),
+        category_nodes=len(categories),
+    )
+
+
+# --- GET /graph/file/{doc_id} ---
+@app.get("/graph/file/{doc_id}")
+async def get_graph_file(doc_id: str):
+    """Get a file's graph node and connections."""
+    doc = vector_store.get_document(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    related = vector_store.get_related_documents(doc_id, top_k=5)
+    return {
+        "node": {
+            "id": doc_id,
+            "type": "file",
+            "label": doc.get("file_name", ""),
+            "metadata": doc,
+        },
+        "related": related,
+        "category": doc.get("category", ""),
+    }
+
+
+# --- GET /graph/related/{doc_id} ---
+@app.get("/graph/related/{doc_id}", response_model=RelatedFilesResponse)
+async def get_related_files(doc_id: str):
+    """Get files related to a given document."""
+    related_docs = vector_store.get_related_documents(doc_id, top_k=5)
+    related = [
+        MemoryItem(
+            file_path=d.get("file_path", ""),
+            file_name=d.get("file_name", ""),
+            modality=d.get("modality", ""),
+            description=d.get("description", ""),
+            category=d.get("category", ""),
+            summary=d.get("summary", ""),
+            timestamp=d.get("timestamp", ""),
+            file_date=d.get("file_date", ""),
+            has_events=d.get("has_events", False),
+            doc_id=d.get("doc_id", ""),
+            content_hash=d.get("content_hash", ""),
+        )
+        for d in related_docs
+    ]
+    return RelatedFilesResponse(doc_id=doc_id, related=related, total=len(related))
+
+
+# --- GET /graph/category/{category} ---
+@app.get("/graph/category/{category}")
+async def get_graph_category(category: str):
+    """Get all files in a category."""
+    docs = vector_store.get_documents_by_category(category)
+    return {
+        "category": category,
+        "files": docs,
+        "total": len(docs),
+    }
+
+
+# --- POST /webhooks ---
+@app.post("/webhooks", response_model=WebhookResponse)
+async def create_webhook(body: WebhookCreate):
+    """Register a new Discord webhook URL."""
+    webhook_id = await save_webhook(body.url, body.label)
+    webhooks = await get_webhooks()
+    webhook = next((w for w in webhooks if w["id"] == webhook_id), None)
+    if not webhook:
+        raise HTTPException(status_code=500, detail="Failed to save webhook")
+    return WebhookResponse(
+        id=webhook["id"],
+        url=webhook["url"],
+        label=webhook["label"],
+        is_active=webhook["is_active"],
+        created_at=webhook["created_at"],
+    )
+
+
+# --- GET /webhooks ---
+@app.get("/webhooks", response_model=WebhooksListResponse)
+async def list_webhooks():
+    """List all active webhooks."""
+    webhooks = await get_webhooks()
+    items = [
+        WebhookResponse(
+            id=w["id"],
+            url=w["url"],
+            label=w["label"],
+            is_active=w["is_active"],
+            created_at=w["created_at"],
+        )
+        for w in webhooks
+    ]
+    return WebhooksListResponse(webhooks=items, total=len(items))
+
+
+# --- DELETE /webhooks/{webhook_id} ---
+@app.delete("/webhooks/{webhook_id}", response_model=EventDeleteResponse)
+async def remove_webhook(webhook_id: int):
+    """Delete a webhook by ID."""
+    deleted = await delete_webhook(webhook_id)
+    return EventDeleteResponse(success=deleted, deleted_count=1 if deleted else 0)
+
+
+# --- POST /webhooks/{webhook_id}/test ---
+@app.post("/webhooks/{webhook_id}/test")
+async def test_webhook(webhook_id: int):
+    """Send a test notification through a specific webhook."""
+    webhooks = await get_webhooks()
+    webhook = next((w for w in webhooks if w["id"] == webhook_id), None)
+    if not webhook:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    count = await trigger_webhooks(
+        "Test Notification", "This is a test from Forgot Me", None
+    )
+    return {"success": count > 0, "delivered": count}

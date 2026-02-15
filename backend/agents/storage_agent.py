@@ -1,10 +1,12 @@
 import base64
 import hashlib
+import io
 import logging
 import os
 from datetime import datetime
 
 from models.schemas import IngestResult
+from PIL import Image
 from processors import (
     audio_processor,
     calendar_processor,
@@ -74,6 +76,7 @@ async def ingest_file(
     try:
         # 1. Decode file content
         file_bytes = base64.b64decode(file_content_base64)
+        content_hash = hashlib.sha256(file_bytes).hexdigest()[:16]
 
         # 2. Detect modality
         modality = detect_modality(filename)
@@ -87,6 +90,18 @@ async def ingest_file(
                 file_path=file_path,
                 error="Could not extract any content from file",
             )
+
+        # 3b. Generate thumbnail for images
+        thumbnail_b64 = ""
+        if modality == "image":
+            try:
+                img = Image.open(io.BytesIO(file_bytes))
+                img.thumbnail((200, 200))
+                buf = io.BytesIO()
+                img.convert("RGB").save(buf, format="JPEG", quality=60)
+                thumbnail_b64 = base64.b64encode(buf.getvalue()).decode()
+            except Exception as e:
+                logger.warning(f"Thumbnail generation failed: {e}")
 
         # 4. Generate description, category, summary via LLM
         desc_result = await llm_service.generate_description(filename, content)
@@ -124,6 +139,9 @@ async def ingest_file(
             "has_events": has_events,
             "summary": summary,
             "content_snippet": content_snippet,
+            "content_hash": content_hash,
+            "doc_id": doc_id,
+            "thumbnail": thumbnail_b64,
         }
         vector_store.store_document(doc_id, description, metadata)
 

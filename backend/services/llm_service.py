@@ -84,16 +84,38 @@ Respond ONLY with valid JSON."""
     )
 
 
-async def answer_query(question: str, context: str) -> str:
+async def answer_query(
+    question: str, context: str, conversation_history: list[dict] | None = None
+) -> str:
     """Generate an answer grounded in the retrieved file context."""
-    prompt = f"""You are a helpful assistant. Read the file contents below carefully, then answer the question.
-ONLY use information that is directly present in the files. Mention which file the answer comes from.
-If none of the files contain information relevant to the question, say "No relevant information found in your files."
+    conv_context = ""
+    if conversation_history:
+        recent = conversation_history[-3:]  # Last 3 turns
+        parts = []
+        for turn in recent:
+            q = turn.get("question", "")
+            a = turn.get("answer", "")[:200]  # Truncate answers
+            parts.append(f"User: {q}\nAssistant: {a}")
+        conv_context = "\n\n".join(parts)
+
+    prompt = f"""You are a helpful personal assistant that helps users find and understand their files.
+Read the file descriptions and content below, then answer the question.
+Use the information from the files to give a helpful answer. Mention which file(s) the answer comes from.
+For images, describe what is in the photo based on the description provided.
+For documents, summarize the relevant content.
+Always try to give a useful answer based on the files provided — do NOT say you couldn't find information if files are listed below.
 
 --- FILES START ---
 {context}
 --- FILES END ---
-
+"""
+    if conv_context:
+        prompt += f"""
+--- PREVIOUS CONVERSATION ---
+{conv_context}
+--- END PREVIOUS CONVERSATION ---
+"""
+    prompt += f"""
 Question: {question}
 
 Answer:"""

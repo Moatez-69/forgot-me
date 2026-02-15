@@ -1,39 +1,79 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
-import type { NotificationEvent } from '../services/api';
+import React from "react";
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { colors, spacing, radii } from "../constants/theme";
+import type { NotificationEvent } from "../services/api";
 
 interface Props {
   event: NotificationEvent;
+  onDismiss?: (event: NotificationEvent) => void;
 }
 
-export default function NotifCard({ event }: Props) {
+export default function NotifCard({ event, onDismiss }: Props) {
   const urgency = getUrgency(event.date);
 
+  const handleLongPress = () => {
+    if (!onDismiss) return;
+    Alert.alert("Dismiss Event", `Remove "${event.title}" from your events?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Dismiss",
+        style: "destructive",
+        onPress: () => onDismiss(event),
+      },
+    ]);
+  };
+
   return (
-    <View style={[styles.card, { borderLeftColor: urgency.color }]}>
+    <TouchableOpacity
+      style={[styles.card, { borderLeftColor: urgency.color }]}
+      onLongPress={handleLongPress}
+      activeOpacity={0.7}
+      accessibilityLabel={`Event: ${event.title}, ${urgency.label || "upcoming"}, ${event.description}. Long press to dismiss.`}
+      accessibilityRole="summary"
+    >
       <View style={styles.header}>
+        <View
+          style={[styles.iconWrap, { backgroundColor: `${urgency.color}18` }]}
+        >
+          <Ionicons name="calendar" size={18} color={urgency.color} />
+        </View>
         <Text style={styles.title} numberOfLines={1}>
           {event.title}
         </Text>
-        {urgency.label && (
-          <View style={[styles.urgencyBadge, { backgroundColor: urgency.color }]}>
-            <Text style={styles.urgencyText}>{urgency.label}</Text>
+        {urgency.label !== "" && (
+          <View
+            style={[
+              styles.urgencyBadge,
+              {
+                backgroundColor: `${urgency.color}22`,
+                borderColor: `${urgency.color}66`,
+              },
+            ]}
+          >
+            <Text style={[styles.urgencyText, { color: urgency.color }]}>
+              {urgency.label}
+            </Text>
           </View>
         )}
       </View>
 
       {event.date && (
-        <Text style={styles.date}>{formatDate(event.date)}</Text>
+        <View style={styles.dateRow}>
+          <Ionicons name="time-outline" size={13} color={colors.accent} />
+          <Text style={styles.date}>{formatDate(event.date)}</Text>
+        </View>
       )}
 
       <Text style={styles.description} numberOfLines={2}>
         {event.description}
       </Text>
 
-      <Text style={styles.source}>
-        From: {event.source_file}
-      </Text>
-    </View>
+      <View style={styles.sourceRow}>
+        <Ionicons name="document-outline" size={12} color={colors.textDark} />
+        <Text style={styles.source}>{event.source_file}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -43,7 +83,7 @@ interface Urgency {
 }
 
 function getUrgency(dateStr: string | null): Urgency {
-  if (!dateStr) return { color: '#444', label: '' };
+  if (!dateStr) return { color: colors.urgencyDefault, label: "" };
 
   try {
     const eventDate = new Date(dateStr);
@@ -54,12 +94,15 @@ function getUrgency(dateStr: string | null): Urgency {
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
 
-    if (eventDate < tomorrow) return { color: '#e74c3c', label: 'Today' };
-    if (eventDate < new Date(tomorrow.getTime() + 86400000)) return { color: '#f39c12', label: 'Tomorrow' };
-    if (eventDate < nextWeek) return { color: '#f1c40f', label: 'This week' };
-    return { color: '#444', label: '' };
+    if (eventDate < tomorrow)
+      return { color: colors.urgencyToday, label: "Today" };
+    if (eventDate < new Date(tomorrow.getTime() + 86400000))
+      return { color: colors.urgencyTomorrow, label: "Tomorrow" };
+    if (eventDate < nextWeek)
+      return { color: colors.urgencyThisWeek, label: "This week" };
+    return { color: colors.urgencyDefault, label: "" };
   } catch {
-    return { color: '#444', label: '' };
+    return { color: colors.urgencyDefault, label: "" };
   }
 }
 
@@ -67,11 +110,11 @@ function formatDate(dateStr: string): string {
   try {
     const date = new Date(dateStr);
     return date.toLocaleDateString(undefined, {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   } catch {
     return dateStr;
@@ -80,50 +123,68 @@ function formatDate(dateStr: string): string {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1a1a2e',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-    borderLeftWidth: 4,
+    backgroundColor: colors.card,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.md,
+    borderLeftWidth: 3,
     borderWidth: 1,
-    borderColor: '#2d2d44',
+    borderColor: colors.border,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: spacing.sm,
+  },
+  iconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: radii.md,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: spacing.sm + 2,
   },
   title: {
-    color: '#e0e0e0',
+    color: colors.textPrimary,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
     flex: 1,
   },
   urgencyBadge: {
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    marginLeft: 8,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    marginLeft: spacing.sm,
+    borderWidth: 1,
   },
   urgencyText: {
-    color: '#fff',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: "700",
+  },
+  dateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs + 1,
+    marginBottom: spacing.sm,
   },
   date: {
-    color: '#6c63ff',
+    color: colors.accent,
     fontSize: 13,
-    marginBottom: 6,
+    fontWeight: "600",
   },
   description: {
-    color: '#a0a0b0',
+    color: colors.textSecondary,
     fontSize: 13,
-    lineHeight: 18,
-    marginBottom: 6,
+    lineHeight: 19,
+    marginBottom: spacing.sm,
+  },
+  sourceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
   },
   source: {
-    color: '#555',
+    color: colors.textDark,
     fontSize: 11,
   },
 });

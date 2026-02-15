@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "MindVault",
-    "slug": "mindvault",
+    "name": "Forgot Me",
+    "slug": "forget-me",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "scheme": "mindvault",
+    "scheme": "forgetme",
     "splash": {
       "backgroundColor": "#0f0f1a"
     },

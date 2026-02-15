@@ -62,6 +62,17 @@ export interface SourceFile {
   modality: string;
   doc_id: string;
   thumbnail: string; // base64 JPEG thumbnail for images
+  content_snippet: string;
+}
+
+export interface DeleteResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface EventDeleteResponse {
+  success: boolean;
+  deleted_count: number;
 }
 
 export interface QueryResponse {
@@ -74,8 +85,10 @@ export interface QueryResponse {
  * Build the URL to fetch a stored file from the backend.
  * Used to display images inline or create download links.
  */
+let _cachedBaseUrl = DEFAULT_URL;
+
 export function getFileUrl(docId: string): string {
-  return `${DEFAULT_URL}/files/${docId}`;
+  return `${_cachedBaseUrl}/files/${docId}`;
 }
 
 export interface MemoryItem {
@@ -88,6 +101,8 @@ export interface MemoryItem {
   timestamp: string;
   file_date: string;
   has_events: boolean;
+  doc_id: string;
+  content_hash: string;
 }
 
 export interface MemoriesResponse {
@@ -124,16 +139,14 @@ export interface HealthResponse {
 // --- Fetch helpers (no axios — avoids Node crypto issue in RN) ---
 
 export async function getBackendUrl(): Promise<string> {
-  // Always clear stale cached URL and use DEFAULT_URL
-  // Users can still override via setBackendUrl which stores a new value
   const url = await AsyncStorage.getItem(BACKEND_URL_KEY);
-  if (url && url !== DEFAULT_URL) {
-    await AsyncStorage.removeItem(BACKEND_URL_KEY);
-  }
-  return DEFAULT_URL;
+  const resolved = url || DEFAULT_URL;
+  _cachedBaseUrl = resolved;
+  return resolved;
 }
 
 export async function setBackendUrl(url: string): Promise<void> {
+  _cachedBaseUrl = url;
   await AsyncStorage.setItem(BACKEND_URL_KEY, url);
 }
 
@@ -181,6 +194,13 @@ async function get<T>(
   return res.json() as Promise<T>;
 }
 
+async function del<T>(path: string): Promise<T> {
+  const base = await getBackendUrl();
+  const res = await fetch(`${base}${path}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
 export interface GraphResponse {
   nodes: Record<string, any>[];
   edges: Record<string, any>[];
@@ -203,6 +223,19 @@ export interface RelatedFilesResponse {
   total: number;
 }
 
+export interface WebhookResponse {
+  id: number;
+  url: string;
+  label: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface WebhooksListResponse {
+  webhooks: WebhookResponse[];
+  total: number;
+}
+
 // --- API functions ---
 
 export const api = {
@@ -217,15 +250,40 @@ export const api = {
   ingestBatch: (files: FilePayload[]) =>
     post<BatchIngestResponse>("/ingest/batch", { files }),
 
-  query: (question: string) =>
-    post<QueryResponse>("/query", { question, top_k: 5 }),
+  query: (
+    question: string,
+    conversationHistory?: Array<{ question: string; answer: string }>,
+  ) =>
+    post<QueryResponse>("/query", {
+      question,
+      top_k: 5,
+      conversation_history: conversationHistory || [],
+    }),
 
-  getMemories: (category?: string) =>
-    get<MemoriesResponse>("/memories", category ? { category } : undefined),
+  getMemories: (category?: string, search?: string) => {
+    const params: Record<string, string> = {};
+    if (category) params.category = category;
+    if (search) params.search = search;
+    return get<MemoriesResponse>(
+      "/memories",
+      Object.keys(params).length > 0 ? params : undefined,
+    );
+  },
 
   getNotifications: () => get<NotificationsResponse>("/notifications"),
 
   health: () => get<HealthResponse>("/health"),
+
+  // Delete operations
+  deleteMemory: (docId: string) => del<DeleteResponse>(`/memories/${docId}`),
+
+  deleteEvent: (eventId: number) =>
+    del<EventDeleteResponse>(`/events/${eventId}`),
+
+  cleanupEvents: () => post<EventDeleteResponse>("/events/cleanup", {}),
+
+  // File metadata
+  getFile: (docId: string) => get<Record<string, any>>(`/files/${docId}`),
 
   // Knowledge Graph
   getGraph: () => get<GraphResponse>("/graph"),
@@ -241,6 +299,15 @@ export const api = {
   getGraphCategory: (category: string) =>
     get<Record<string, any>>(`/graph/category/${category}`),
 
-  getGraphKeyword: (keyword: string) =>
-    get<Record<string, any>>(`/graph/keyword/${keyword}`),
+  // Webhooks
+  getWebhooks: () => get<WebhooksListResponse>("/webhooks"),
+
+  addWebhook: (url: string, label: string = "Discord") =>
+    post<WebhookResponse>("/webhooks", { url, label }),
+
+  deleteWebhook: (webhookId: number) =>
+    del<EventDeleteResponse>(`/webhooks/${webhookId}`),
+
+  testWebhook: (webhookId: number) =>
+    post<Record<string, any>>(`/webhooks/${webhookId}/test`, {}),
 };

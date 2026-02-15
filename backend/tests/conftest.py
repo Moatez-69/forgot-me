@@ -21,9 +21,20 @@ async def temp_db(tmp_path):
         yield db_path
 
 
+# -- Check if chromadb is importable (fails on Python 3.14 due to pydantic v1) --
+try:
+    import chromadb  # noqa: F401
+
+    _chromadb_available = True
+except Exception:
+    _chromadb_available = False
+
+
 # -- Temp ChromaDB for vector_store tests --
 @pytest.fixture
 def temp_chroma(tmp_path):
+    if not _chromadb_available:
+        pytest.skip("chromadb not importable on this Python version")
     chroma_path = str(tmp_path / "test_chroma")
     with (
         patch("services.vector_store.CHROMA_PATH", chroma_path),
@@ -56,6 +67,8 @@ def mock_llm():
 @pytest.fixture
 def api_client(tmp_path, mock_llm):
     """Fully isolated TestClient: temp ChromaDB, temp SQLite, mocked LLM."""
+    if not _chromadb_available:
+        pytest.skip("chromadb not importable on this Python version")
     db_path = str(tmp_path / "api_test.db")
     chroma_path = str(tmp_path / "api_chroma")
 
