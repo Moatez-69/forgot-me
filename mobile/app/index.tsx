@@ -6,11 +6,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Image,
+  Linking,
 } from "react-native";
 import { useRouter } from "expo-router";
 import QueryInput from "../components/QueryInput";
 import MemoryCard from "../components/MemoryCard";
-import { api, QueryResponse, MemoryItem } from "../services/api";
+import { api, QueryResponse, MemoryItem, getFileUrl } from "../services/api";
 import { showSetup } from "./_layout";
 
 export default function HomeScreen() {
@@ -33,7 +35,9 @@ export default function HomeScreen() {
     try {
       const res = await api.getNotifications();
       setEventCount(res.total);
-    } catch {}
+    } catch (_) {
+      // Backend may not be up yet
+    }
   }, []);
 
   useEffect(() => {
@@ -109,22 +113,58 @@ export default function HomeScreen() {
           {queryResult.sources.length > 0 && (
             <>
               <Text style={styles.sectionTitle}>Sources</Text>
-              {queryResult.sources.map((src, i) => (
-                <View key={i} style={styles.sourceCard}>
-                  <Text style={styles.sourceFile}>{src.file_name}</Text>
-                  <Text style={styles.sourceDesc} numberOfLines={2}>
-                    {src.description}
-                  </Text>
-                  <View
-                    style={[
-                      styles.badge,
-                      { backgroundColor: getBadgeColor(src.category) },
-                    ]}
-                  >
-                    <Text style={styles.badgeText}>{src.category}</Text>
+              {queryResult.sources.map((src, i) => {
+                const isImage = src.modality === "image";
+                const fileUrl = src.doc_id ? getFileUrl(src.doc_id) : "";
+                const thumbnailUri = src.thumbnail
+                  ? `data:image/jpeg;base64,${src.thumbnail}`
+                  : "";
+
+                return (
+                  <View key={i} style={styles.sourceCard}>
+                    {/* Image preview — use inline base64 thumbnail */}
+                    {isImage && thumbnailUri ? (
+                      <Image
+                        source={{ uri: thumbnailUri }}
+                        style={styles.sourceImage}
+                        resizeMode="cover"
+                      />
+                    ) : isImage ? (
+                      <View style={styles.imagePlaceholder}>
+                        <Text style={styles.placeholderIcon}>🖼️</Text>
+                        <Text style={styles.placeholderText}>
+                          Re-ingest to see preview
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {/* File name — always shown */}
+                    {!isImage && fileUrl ? (
+                      <TouchableOpacity
+                        onPress={() => Linking.openURL(fileUrl)}
+                        style={styles.docLink}
+                      >
+                        <Text style={styles.docLinkIcon}>📄</Text>
+                        <Text style={styles.docLinkText}>{src.file_name}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.sourceFile}>{src.file_name}</Text>
+                    )}
+
+                    <Text style={styles.sourceDesc} numberOfLines={2}>
+                      {src.description}
+                    </Text>
+                    <View
+                      style={[
+                        styles.badge,
+                        { backgroundColor: getBadgeColor(src.category) },
+                      ]}
+                    >
+                      <Text style={styles.badgeText}>{src.category}</Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </>
           )}
         </View>
@@ -261,6 +301,50 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderWidth: 1,
     borderColor: "#2d2d44",
+  },
+  sourceImage: {
+    width: "100%",
+    height: 180,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: "#2d2d44",
+  },
+  imagePlaceholder: {
+    width: "100%",
+    height: 100,
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: "#252542",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  placeholderIcon: {
+    fontSize: 28,
+    marginBottom: 4,
+  },
+  placeholderText: {
+    color: "#666",
+    fontSize: 11,
+  },
+  docLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#252542",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+  },
+  docLinkIcon: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  docLinkText: {
+    color: "#6c9eff",
+    fontSize: 14,
+    fontWeight: "600",
+    textDecorationLine: "underline",
+    flex: 1,
   },
   sourceFile: {
     color: "#e0e0e0",

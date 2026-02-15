@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const BACKEND_URL_KEY = "mindvault_backend_url";
-const DEFAULT_URL = "http://192.168.1.100:8000";
+const DEFAULT_URL = "http://192.168.50.43:8001";
 
 const ALLOWED_EXTENSIONS = [
   ".pdf",
@@ -59,12 +59,23 @@ export interface SourceFile {
   file_path: string;
   description: string;
   category: string;
+  modality: string;
+  doc_id: string;
+  thumbnail: string; // base64 JPEG thumbnail for images
 }
 
 export interface QueryResponse {
   answer: string;
   sources: SourceFile[];
   verified: boolean;
+}
+
+/**
+ * Build the URL to fetch a stored file from the backend.
+ * Used to display images inline or create download links.
+ */
+export function getFileUrl(docId: string): string {
+  return `${DEFAULT_URL}/files/${docId}`;
 }
 
 export interface MemoryItem {
@@ -113,8 +124,13 @@ export interface HealthResponse {
 // --- Fetch helpers (no axios — avoids Node crypto issue in RN) ---
 
 export async function getBackendUrl(): Promise<string> {
+  // Always clear stale cached URL and use DEFAULT_URL
+  // Users can still override via setBackendUrl which stores a new value
   const url = await AsyncStorage.getItem(BACKEND_URL_KEY);
-  return url || DEFAULT_URL;
+  if (url && url !== DEFAULT_URL) {
+    await AsyncStorage.removeItem(BACKEND_URL_KEY);
+  }
+  return DEFAULT_URL;
 }
 
 export async function setBackendUrl(url: string): Promise<void> {
@@ -165,6 +181,28 @@ async function get<T>(
   return res.json() as Promise<T>;
 }
 
+export interface GraphResponse {
+  nodes: Record<string, any>[];
+  edges: Record<string, any>[];
+  node_count: number;
+  edge_count: number;
+}
+
+export interface GraphStatsResponse {
+  total_nodes: number;
+  total_edges: number;
+  file_nodes: number;
+  category_nodes: number;
+  keyword_nodes: number;
+  file_relationships: number;
+}
+
+export interface RelatedFilesResponse {
+  doc_id: string;
+  related: Record<string, any>[];
+  total: number;
+}
+
 // --- API functions ---
 
 export const api = {
@@ -188,4 +226,21 @@ export const api = {
   getNotifications: () => get<NotificationsResponse>("/notifications"),
 
   health: () => get<HealthResponse>("/health"),
+
+  // Knowledge Graph
+  getGraph: () => get<GraphResponse>("/graph"),
+
+  getGraphStats: () => get<GraphStatsResponse>("/graph/stats"),
+
+  getGraphFile: (docId: string) =>
+    get<Record<string, any>>(`/graph/file/${docId}`),
+
+  getRelatedFiles: (docId: string) =>
+    get<RelatedFilesResponse>(`/graph/related/${docId}`),
+
+  getGraphCategory: (category: string) =>
+    get<Record<string, any>>(`/graph/category/${category}`),
+
+  getGraphKeyword: (keyword: string) =>
+    get<Record<string, any>>(`/graph/keyword/${keyword}`),
 };
