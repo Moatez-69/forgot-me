@@ -1,12 +1,10 @@
 import base64
 import hashlib
-import io
 import logging
 import os
 from datetime import datetime
 
 from models.schemas import IngestResult
-from PIL import Image
 from processors import (
     audio_processor,
     calendar_processor,
@@ -91,18 +89,6 @@ async def ingest_file(
                 error="Could not extract any content from file",
             )
 
-        # 3b. Generate thumbnail for images
-        thumbnail_b64 = ""
-        if modality == "image":
-            try:
-                img = Image.open(io.BytesIO(file_bytes))
-                img.thumbnail((200, 200))
-                buf = io.BytesIO()
-                img.convert("RGB").save(buf, format="JPEG", quality=60)
-                thumbnail_b64 = base64.b64encode(buf.getvalue()).decode()
-            except Exception as e:
-                logger.warning(f"Thumbnail generation failed: {e}")
-
         # 4. Generate description, category, summary via LLM
         desc_result = await llm_service.generate_description(filename, content)
         description = desc_result.get("description", f"File: {filename}")
@@ -119,15 +105,11 @@ async def ingest_file(
         has_events = event_result.get("has_events", False)
         events = event_result.get("events", [])
 
-        # 6. Store in ChromaDB — description is what gets embedded, not raw content
+        # 6. Store in ChromaDB — only file_path and description for lightweight search
         doc_id = hashlib.sha256(file_path.encode()).hexdigest()[:16]
         now = datetime.utcnow().isoformat()
 
-        # Keep a content snippet (first 1500 chars) so the LLM can answer
-        # specific questions at query time. The description is still what
-        # gets embedded for semantic search.
-        content_snippet = content[:1500]
-
+        # Minimal metadata: just enough to find and display the file path
         metadata = {
             "file_path": file_path,
             "file_name": filename,
@@ -135,13 +117,8 @@ async def ingest_file(
             "description": description,
             "category": category,
             "timestamp": now,
-            "file_date": now,  # Best effort — real date comes from the phone
             "has_events": has_events,
-            "summary": summary,
-            "content_snippet": content_snippet,
-            "content_hash": content_hash,
             "doc_id": doc_id,
-            "thumbnail": thumbnail_b64,
         }
         vector_store.store_document(doc_id, description, metadata)
 

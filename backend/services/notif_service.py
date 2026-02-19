@@ -272,3 +272,18 @@ async def trigger_webhooks(title: str, description: str, date: str | None) -> in
             except Exception:
                 logger.warning("Failed to deliver webhook to %s", webhook["url"])
     return success_count
+
+
+async def clear_all_events() -> int:
+    """
+    Delete all events from SQLite.
+    Returns the number of events deleted.
+    """
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            cursor = await db.execute("DELETE FROM events")
+            await db.commit()
+            return cursor.rowcount
+    except Exception as e:
+        logger.error(f"Error clearing events: {e}")
+        return 0

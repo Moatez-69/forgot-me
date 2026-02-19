@@ -9,12 +9,9 @@ import {
   Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import {
-  StorageAccessFramework,
-  readAsStringAsync,
-  EncodingType,
-} from "expo-file-system/legacy";
-import { api, FilePayload, IngestResult } from "../services/api";
+import { StorageAccessFramework } from "expo-file-system/legacy";
+import { api } from "../services/api";
+import * as BackgroundTask from "../services/backgroundTask";
 import FadeIn from "../components/FadeIn";
 import {
   colors,
@@ -43,20 +40,13 @@ interface DiscoveredFile {
   uri: string;
   name: string;
   selected: boolean;
-  status: "idle" | "processing" | "done" | "error";
-  result?: IngestResult;
+  status: "idle" | "queued" | "processing" | "done" | "error";
+  result?: any;
 }
 
 function getExtension(name: string): string {
   const dot = name.lastIndexOf(".");
   return dot >= 0 ? name.substring(dot).toLowerCase() : "";
-}
-
-// Push notifications require a development build (not Expo Go).
-// This is a placeholder — when using a dev build, import expo-notifications
-// here and schedule notifications for future events after ingestion.
-async function scheduleEventNotifications(_filesWithEvents: DiscoveredFile[]) {
-  // no-op in Expo Go
 }
 
 export default function ScanScreen() {
@@ -122,7 +112,8 @@ export default function ScanScreen() {
   const handleIngest = async () => {
     const selectedIndices: number[] = [];
     files.forEach((f, i) => {
-      if (f.selected && f.status !== "done") selectedIndices.push(i);
+      if (f.selected && f.status !== "done" && f.status !== "queued")
+        selectedIndices.push(i);
     });
     if (selectedIndices.length === 0) {
       Alert.alert("No files selected", "Select at least one file to ingest.");
@@ -133,127 +124,33 @@ export default function ScanScreen() {
     setProcessedCount(0);
     setTotalToProcess(selectedIndices.length);
 
-    // Mark all selected as processing
+    // Mark all selected as queued
     setFiles((prev) =>
       prev.map((f, i) =>
-        selectedIndices.includes(i) ? { ...f, status: "processing" } : f,
+        selectedIndices.includes(i) ? { ...f, status: "queued" } : f,
       ),
     );
 
     try {
-      // Read all files as base64 first
-      const payloads: FilePayload[] = [];
-      const payloadIndexMap: number[] = []; // maps payload index -> files index
-      for (const i of selectedIndices) {
-        try {
-          const base64 = await readAsStringAsync(files[i].uri, {
-            encoding: EncodingType.Base64,
-          });
-          payloads.push({
-            file_path: files[i].uri,
-            file_content_base64: base64,
-            filename: files[i].name,
-          });
-          payloadIndexMap.push(i);
-        } catch (err: any) {
-          setFiles((prev) =>
-            prev.map((f, j) =>
-              j === i
-                ? {
-                    ...f,
-                    status: "error",
-                    result: {
-                      success: false,
-                      file_path: files[i].uri,
-                      description: "",
-                      category: "",
-                      has_events: false,
-                      error: err.message || "Failed to read file",
-                    },
-                  }
-                : f,
-            ),
-          );
-        }
-      }
+      // Queue file URIs only — base64 is read on demand during processing
+      const filesToQueue = selectedIndices.map((i) => ({
+        file_path: files[i].uri,
+        filename: files[i].name,
+      }));
 
-      if (payloads.length > 0) {
-        // Send batch request
-        const batchResult = await api.ingestBatch(payloads);
+      BackgroundTask.addToQueue(filesToQueue);
+      setProcessedCount(filesToQueue.length);
 
-        // Map results back to file indices
-        setFiles((prev) =>
-          prev.map((f, i) => {
-            const payloadIdx = payloadIndexMap.indexOf(i);
-            if (payloadIdx === -1) return f;
-            const result = batchResult.results[payloadIdx];
-            if (!result) return f;
-            return {
-              ...f,
-              status: result.success ? "done" : "error",
-              result,
-            };
-          }),
-        );
-        setProcessedCount(payloads.length);
-      }
+      Alert.alert(
+        "Files Queued",
+        `${filesToQueue.length} file(s) queued for processing. They will be processed automatically.`,
+        [{ text: "OK" }, { text: "View Queue", onPress: () => {} }],
+      );
     } catch (err: any) {
-      // Batch failed — fall back to sequential
-      for (const i of selectedIndices) {
-        if (files[i].status === "done" || files[i].status === "error") continue;
-        try {
-          const base64 = await readAsStringAsync(files[i].uri, {
-            encoding: EncodingType.Base64,
-          });
-          const result = await api.ingest({
-            file_path: files[i].uri,
-            file_content_base64: base64,
-            filename: files[i].name,
-          });
-          setFiles((prev) =>
-            prev.map((f, j) =>
-              j === i
-                ? { ...f, status: result.success ? "done" : "error", result }
-                : f,
-            ),
-          );
-          setProcessedCount((c) => c + 1);
-        } catch (fallbackErr: any) {
-          setFiles((prev) =>
-            prev.map((f, j) =>
-              j === i
-                ? {
-                    ...f,
-                    status: "error",
-                    result: {
-                      success: false,
-                      file_path: files[i].uri,
-                      description: "",
-                      category: "",
-                      has_events: false,
-                      error: fallbackErr.message || "Failed to process file",
-                    },
-                  }
-                : f,
-            ),
-          );
-        }
-      }
+      Alert.alert("Error", err.message || "Failed to queue files");
     }
 
     setIngesting(false);
-    const doneCount = files.filter((f) => f.result?.success).length;
-    if (doneCount > 0) {
-      Alert.alert("Done", `Successfully ingested ${doneCount} file(s).`);
-
-      // Schedule push notifications for files with events
-      const filesWithEvents = files.filter(
-        (f) => f.result?.success && f.result?.has_events,
-      );
-      if (filesWithEvents.length > 0) {
-        scheduleEventNotifications(filesWithEvents);
-      }
-    }
   };
 
   const selectAll = () =>
@@ -378,6 +275,15 @@ export default function ScanScreen() {
                       {getExtension(file.name).toUpperCase().slice(1)}
                     </Text>
                   </View>
+                  {file.status === "queued" && (
+                    <View style={styles.queuedBadge}>
+                      <Ionicons
+                        name="cloud-upload-outline"
+                        size={16}
+                        color={colors.accent}
+                      />
+                    </View>
+                  )}
                   {file.status === "processing" && (
                     <ActivityIndicator size="small" color={colors.primary} />
                   )}
@@ -458,12 +364,13 @@ export default function ScanScreen() {
                   <ActivityIndicator color="#fff" size="small" />
                   <Text style={styles.ingestButtonText}>
                     {" "}
-                    Processing {processedCount} of {totalToProcess}...
+                    Queuing {processedCount} of {totalToProcess}...
                   </Text>
                 </View>
               ) : (
                 <Text style={styles.ingestButtonText}>
-                  Ingest {pendingCount} File{pendingCount !== 1 ? "s" : ""}
+                  Queue {pendingCount} File{pendingCount !== 1 ? "s" : ""} for
+                  Background Processing
                 </Text>
               )}
             </TouchableOpacity>
@@ -560,6 +467,14 @@ const styles = StyleSheet.create({
     marginTop: 3,
     letterSpacing: 0.5,
     fontWeight: "600",
+  },
+  queuedBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: radii.md,
+    backgroundColor: `${colors.accent}15`,
+    justifyContent: "center",
+    alignItems: "center",
   },
   resultInfo: {
     marginTop: spacing.sm + 2,

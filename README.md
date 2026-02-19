@@ -17,11 +17,11 @@ Phone (Expo Go)                    Your Machine (Docker)
 |  Mobile App      | ------------> |  :8000                     |
 |                  |               |                            |
 |  - Scan folders  |               |  +-- Storage Agent ------+ |
-|  - Query files   |               |  | Detect modality       | |
-|  - Browse memory |               |  | Extract content       | |
-|  - View events   |               |  | LLM description       | |
-+------------------+               |  | LLM event extraction  | |
-                                   |  | Embed + store         | |
+|  - Queue files   |               |  | Detect modality       | |
+|  - Query files   |               |  | Extract content       | |
+|  - Browse memory |               |  | LLM description       | |
+|  - View events   |               |  | LLM event extraction  | |
++------------------+               |  | Embed + store         | |
                                    |  +------------------------+ |
                                    |                            |
                                    |  ChromaDB    (vectors)     |
@@ -35,10 +35,13 @@ Phone (Expo Go)                    Your Machine (Docker)
 ## Features
 
 - **Multi-modal file processing** -- PDF, images, audio, text, Word docs, emails, and calendar files
+- **Foreground processing queue** -- Files are queued and processed automatically one at a time with real-time status updates
+- **Smart queue management** -- View processing progress, retry failed files, cancel pending items, and clear completed entries
 - **Semantic search** -- Find files by meaning, not just keywords, using sentence-transformer embeddings
 - **Natural language Q&A** -- Ask questions about your files and get cited answers
 - **Self-verification** -- Every answer is checked by a second LLM call for groundedness
 - **Event extraction** -- Automatically finds deadlines, appointments, and reminders in your files
+- **Discord webhook notifications** -- Get notified via Discord when upcoming events are detected
 - **Category tagging** -- Files are auto-classified as work, study, personal, medical, finance, or other
 - **Privacy-first** -- All processing happens locally. No external API calls. Only descriptions are stored, not raw content
 - **Persistent storage** -- ChromaDB and SQLite data survive container restarts
@@ -69,9 +72,10 @@ Phone (Expo Go)                    Your Machine (Docker)
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | Framework | React Native 0.81 + Expo SDK 54 | Cross-platform mobile app |
-| Navigation | expo-router 6.x (file-based) | Tab navigation |
+| Navigation | expo-router 6.x (file-based) | Tab navigation with 5 tabs |
 | File access | expo-file-system (StorageAccessFramework) | Read files from device storage |
-| Storage | AsyncStorage | Backend URL configuration |
+| Notifications | expo-notifications | Push notifications for event detection |
+| Storage | AsyncStorage | Backend URL config + queue persistence |
 | HTTP | Native fetch API | Backend communication |
 | Language | TypeScript 5.9 | Type safety |
 
@@ -94,7 +98,7 @@ mindvault/
 │   ├── services/
 │   │   ├── vector_store.py        # ChromaDB interface + embeddings
 │   │   ├── llm_service.py         # Ollama/Qwen2.5-3B wrapper
-│   │   └── notif_service.py       # SQLite event storage
+│   │   └── notif_service.py       # SQLite event storage + Discord webhooks
 │   ├── models/
 │   │   └── schemas.py             # Pydantic request/response models
 │   ├── requirements.txt
@@ -103,7 +107,8 @@ mindvault/
 │   ├── app/
 │   │   ├── _layout.tsx            # Tab navigation + setup screen
 │   │   ├── index.tsx              # Home / Query screen
-│   │   ├── scan.tsx               # Folder scanner + ingestion
+│   │   ├── scan.tsx               # Folder scanner + file queueing
+│   │   ├── queue.tsx              # Processing queue monitor
 │   │   ├── memories.tsx           # Memory browser with filters
 │   │   └── notifications.tsx      # Upcoming events screen
 │   ├── components/
@@ -111,7 +116,10 @@ mindvault/
 │   │   ├── MemoryCard.tsx         # File memory display card
 │   │   └── NotifCard.tsx          # Event notification card
 │   ├── services/
-│   │   └── api.ts                 # Typed API client (fetch-based)
+│   │   ├── api.ts                 # Typed API client (fetch-based)
+│   │   └── backgroundTask.ts      # In-memory processing queue with event emitter
+│   ├── hooks/
+│   │   └── useIngestQueue.ts      # React hook for queue state
 │   ├── package.json
 │   └── app.json
 └── docker-compose.yml
@@ -136,7 +144,7 @@ Ingest a single file through the storage agent pipeline.
 {
   "success": true,
   "file_path": "/storage/documents/report.pdf",
-  "description": "A quarterly financial report covering Q3 2025 revenue, expenses, and projections for the next fiscal year.",
+  "description": "A quarterly financial report covering Q3 2025 revenue...",
   "category": "finance",
   "has_events": true,
   "error": ""
@@ -159,7 +167,6 @@ Semantic search + LLM Q&A with self-verification.
   "sources": [
     {
       "file_name": "meeting_notes.txt",
-      "file_path": "/storage/documents/meeting_notes.txt",
       "description": "Meeting notes outlining key decisions...",
       "category": "work"
     }
@@ -169,13 +176,31 @@ Semantic search + LLM Q&A with self-verification.
 ```
 
 ### GET /memories
-Retrieve stored file memories with optional category/modality filtering.
+Retrieve stored file memories with optional category/modality/search filtering.
 
 ### GET /notifications
 Get upcoming events extracted from ingested files (date >= today).
 
+### DELETE /memories/{doc_id}
+Delete a memory and its associated events.
+
+### DELETE /events/{event_id}
+Delete a single event.
+
+### POST /events/cleanup
+Delete all past events.
+
+### POST /webhooks
+Register a Discord webhook URL for event notifications.
+
+### GET /webhooks
+List all active webhooks.
+
 ### GET /health
 Service health check for ChromaDB, Ollama, and SQLite.
+
+### POST /admin/clear-data
+Clear all data from ChromaDB and SQLite.
 
 ---
 
@@ -190,9 +215,9 @@ When a file is ingested, the storage agent executes this pipeline:
         |
 3. Route to processor:
    .pdf  --> PyMuPDF      --> extracted text
-   .jpg  --> BLIP caption  --> "[Image content]: a photo of..."
+   .jpg  --> BLIP caption  --> image description
    .mp3  --> Whisper tiny  --> transcribed speech
-   .ics  --> icalendar     --> "Event: Team Meeting, Start: ..."
+   .ics  --> icalendar     --> parsed events
    .txt  --> UTF-8 decode  --> raw text
    .docx --> python-docx   --> paragraphs
    .eml  --> email.parser  --> subject + from + body
@@ -203,7 +228,7 @@ When a file is ingested, the storage agent executes this pipeline:
         |
 6. Description embedded with MiniLM --> stored in ChromaDB
         |
-7. If events found --> stored in SQLite
+7. If events found --> stored in SQLite, webhooks triggered
         |
 8. Return result to mobile app
 ```
@@ -221,12 +246,12 @@ When a file is ingested, the storage agent executes this pipeline:
         |
 3. ChromaDB cosine similarity search --> top-k relevant descriptions
         |
-4. Context built from retrieved file metadata
+4. Smart relevance filtering (best match < 1.5, within 0.25 of best)
         |
 5. LLM generates answer, citing file names
         |
 6. Self-verification: second LLM call checks if answer is grounded
-        |  
+        |
 7. If unverified: disclaimer appended to answer
         |
 8. Return answer + sources + verification status
@@ -262,8 +287,7 @@ When a file is ingested, the storage agent executes this pipeline:
 ```bash
 # Ollama must listen on all interfaces for Docker access
 sudo systemctl edit ollama
-# Add:
-#   [Service]
+# Add under [Service]:
 #   Environment="OLLAMA_HOST=0.0.0.0"
 sudo systemctl restart ollama
 
@@ -313,15 +337,38 @@ On the setup screen, enter your computer's local IP:
 http://<YOUR_IP>:8000
 ```
 
-Tap **Test Connection**, then **Continue**.
+Tap **Test Connection**, then **Continue**. You can also configure a Discord webhook URL to receive event notifications.
 
 ### 5. Ingest files
 
-1. Create a folder on your phone with test documents
-2. Go to the **Scan** tab
-3. Tap **Select Folder to Scan**
-4. Grant access to the folder
-5. Select files and tap **Ingest**
+1. Go to the **Scan** tab
+2. Tap **Select Folder to Scan** and grant access
+3. Select files and tap **Queue for Processing**
+4. Switch to the **Queue** tab to monitor real-time progress
+5. Each file shows its status: pending, processing, completed, or failed
+6. Failed files can be retried with the retry button
+
+### How the processing queue works
+
+Files are processed in the foreground using an in-memory queue with an event-driven UI:
+
+```
+1. User selects files in Scan tab
+        |
+2. File URIs added to in-memory queue (no base64 stored)
+        |
+3. Processing starts immediately, one file at a time:
+   - Read file as base64 on demand
+   - Send to backend /ingest endpoint
+   - Backend runs full pipeline (extract, describe, embed, store)
+   - Update status in queue
+        |
+4. Queue screen updates in real-time via event emitter
+        |
+5. Failed files retried up to 3 times automatically
+        |
+6. Queue state persisted to AsyncStorage for app restart recovery
+```
 
 ### 6. Query
 

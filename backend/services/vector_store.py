@@ -131,12 +131,12 @@ def get_all_memories(
                 modality=meta.get("modality", ""),
                 description=meta.get("description", ""),
                 category=meta.get("category", ""),
-                summary=meta.get("summary", ""),
+                summary="",
                 timestamp=meta.get("timestamp", ""),
-                file_date=meta.get("file_date", ""),
+                file_date="",
                 has_events=meta.get("has_events", False),
                 doc_id=result["ids"][i] if i < len(result["ids"]) else "",
-                content_hash=meta.get("content_hash", ""),
+                content_hash="",
             )
         )
 
@@ -274,12 +274,7 @@ def search_memories(
     for i, meta in enumerate(result["metadatas"]):
         file_name = meta.get("file_name", "").lower()
         description = meta.get("description", "").lower()
-        summary = meta.get("summary", "").lower()
-        if (
-            query_lower in file_name
-            or query_lower in description
-            or query_lower in summary
-        ):
+        if query_lower in file_name or query_lower in description:
             memories.append(
                 MemoryItem(
                     file_path=meta.get("file_path", ""),
@@ -287,14 +282,37 @@ def search_memories(
                     modality=meta.get("modality", ""),
                     description=meta.get("description", ""),
                     category=meta.get("category", ""),
-                    summary=meta.get("summary", ""),
+                    summary="",
                     timestamp=meta.get("timestamp", ""),
-                    file_date=meta.get("file_date", ""),
+                    file_date="",
                     has_events=meta.get("has_events", False),
                     doc_id=result["ids"][i],
-                    content_hash=meta.get("content_hash", ""),
+                    content_hash="",
                 )
             )
 
     memories.sort(key=lambda m: m.timestamp, reverse=True)
     return memories[:limit]
+
+
+def clear_all_documents() -> int:
+    """
+    Delete all documents from ChromaDB.
+    Returns the number of documents deleted.
+    """
+    try:
+        collection = get_collection()
+        count = collection.count()
+
+        if count == 0:
+            return 0
+
+        # Delete all documents by getting all IDs and deleting them
+        result = collection.get(include=[])
+        if result["ids"]:
+            collection.delete(ids=result["ids"])
+
+        return count
+    except Exception as e:
+        print(f"Error clearing documents: {e}")
+        return 0

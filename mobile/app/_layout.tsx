@@ -20,6 +20,7 @@ import {
   api,
   WebhookResponse,
 } from "../services/api";
+import * as BackgroundTask from "../services/backgroundTask";
 import { colors, spacing, radii, typography } from "../constants/theme";
 
 const logoImage = require("../assets/logo.png");
@@ -47,6 +48,9 @@ export default function Layout() {
 
   useEffect(() => {
     (async () => {
+      // Initialize background tasks
+      await BackgroundTask.initBackgroundTasks();
+
       const savedUrl = await getBackendUrl();
       setUrl(savedUrl);
       const done = await AsyncStorage.getItem(SETUP_DONE_KEY);
@@ -451,6 +455,16 @@ export default function Layout() {
           }}
         />
         <Tabs.Screen
+          name="queue"
+          options={{
+            title: "Queue",
+            tabBarLabel: "Queue",
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="cloud-download" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="memories"
           options={{
             title: "Memories",
@@ -467,16 +481,6 @@ export default function Layout() {
             tabBarLabel: "Events",
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="notifications" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
-          name="connections"
-          options={{
-            title: "Connections",
-            tabBarLabel: "Graph",
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="git-network" size={size} color={color} />
             ),
           }}
         />

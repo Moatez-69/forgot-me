@@ -80,8 +80,8 @@ class SourceFile(BaseModel):
     category: str
     modality: str = ""
     doc_id: str = ""
-    thumbnail: str = ""
-    content_snippet: str = ""
+    thumbnail: str = ""  # Kept for API compatibility, always empty
+    content_snippet: str = ""  # Kept for API compatibility, always empty
 
 
 class QueryResponse(BaseModel):
@@ -96,11 +96,11 @@ class MemoryItem(BaseModel):
     modality: str
     description: str
     category: str
-    summary: str
-    timestamp: str
-    file_date: str
-    has_events: bool
-    content_hash: str = ""
+    summary: str = ""  # Kept for API compatibility, always empty
+    timestamp: str = ""
+    file_date: str = ""  # Kept for API compatibility, always empty
+    has_events: bool = False
+    content_hash: str = ""  # Kept for API compatibility, always empty
     doc_id: str = ""
 
 

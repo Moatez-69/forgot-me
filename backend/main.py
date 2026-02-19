@@ -38,11 +38,13 @@ from models.schemas import (
 )
 from services import llm_service, notif_service, vector_store
 from services.notif_service import (
+    clear_all_events,
     delete_webhook,
     get_webhooks,
     save_webhook,
     trigger_webhooks,
 )
+from services.vector_store import clear_all_documents
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -197,15 +199,13 @@ async def query_files(request: QueryRequest):
 
     relevant_docs = [d for d in docs if d.get("distance", 2.0) <= best_distance + 0.25]
 
-    # Build context with content snippets so the LLM can answer specific questions
+    # Build context from descriptions only (lightweight search)
     context_parts = []
     sources = []
     for doc in relevant_docs:
-        snippet = doc.get("content_snippet", "")
         context_parts.append(
             f"File: {doc.get('file_name', 'unknown')}\n"
-            f"Description: {doc.get('description', '')}\n"
-            f"Content: {snippet}"
+            f"Description: {doc.get('description', '')}"
         )
         sources.append(
             SourceFile(
@@ -215,8 +215,8 @@ async def query_files(request: QueryRequest):
                 category=doc.get("category", ""),
                 modality=doc.get("modality", ""),
                 doc_id=doc.get("doc_id", ""),
-                thumbnail=doc.get("thumbnail", ""),
-                content_snippet=doc.get("content_snippet", ""),
+                thumbnail="",
+                content_snippet="",
             )
         )
 
@@ -336,10 +336,6 @@ async def get_file_metadata(doc_id: str):
         "description": doc.get("description", ""),
         "category": doc.get("category", ""),
         "modality": doc.get("modality", ""),
-        "summary": doc.get("summary", ""),
-        "content_snippet": doc.get("content_snippet", ""),
-        "thumbnail": doc.get("thumbnail", ""),
-        "timestamp": doc.get("timestamp", ""),
         "has_events": doc.get("has_events", False),
         "doc_id": doc_id,
     }
@@ -410,7 +406,6 @@ async def get_graph():
                 metadata={
                     "category": category,
                     "modality": doc.get("modality", ""),
-                    "summary": doc.get("summary", ""),
                     "description": doc.get("description", ""),
                 },
             )
@@ -516,12 +511,12 @@ async def get_related_files(doc_id: str):
             modality=d.get("modality", ""),
             description=d.get("description", ""),
             category=d.get("category", ""),
-            summary=d.get("summary", ""),
             timestamp=d.get("timestamp", ""),
-            file_date=d.get("file_date", ""),
             has_events=d.get("has_events", False),
             doc_id=d.get("doc_id", ""),
-            content_hash=d.get("content_hash", ""),
+            content_hash="",
+            file_date="",
+            summary="",
         )
         for d in related_docs
     ]
@@ -596,3 +591,37 @@ async def test_webhook(webhook_id: int):
         "Test Notification", "This is a test from Forgot Me", None
     )
     return {"success": count > 0, "delivered": count}
+
+
+# --- GET /queue/status ---
+@app.get("/queue/status")
+async def get_queue_status():
+    """
+    Get background ingestion queue status.
+    This endpoint is for future enhancement when backend manages the queue.
+    Currently returns a simple response for compatibility.
+    """
+    return {
+        "status": "background_processing_enabled",
+        "message": "Files are processed in the background on the mobile device",
+    }
+
+
+# --- POST /admin/clear-data ---
+@app.post("/admin/clear-data")
+async def clear_all_data():
+    """
+    Clear all data from ChromaDB and SQLite.
+    Use with caution - this deletes all memories and events!
+    """
+    chroma_count = clear_all_documents()
+    events_count = await clear_all_events()
+
+    return {
+        "success": True,
+        "cleared": {
+            "chromadb_documents": chroma_count,
+            "sqlite_events": events_count,
+        },
+        "message": f"Cleared {chroma_count} documents and {events_count} events",
+    }
