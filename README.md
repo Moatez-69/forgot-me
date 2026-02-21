@@ -3,7 +3,7 @@
 <!-- <img src="pictures/banner.png" /> -->
 </p>
 
-<h1 align="center">🧠 MindVault</h1>
+<h1 align="center">🧠 Forgot me?</h1>
 
 <p align="center">
 <b>A local-first personal cognitive assistant that scans your files, understands them with a local LLM, and lets you query your private knowledge base in natural language.</b>
@@ -22,9 +22,9 @@
 
 ---
 
-## 🚀 What is MindVault?
+## 🚀 What is Forgot me??
 
-**MindVault** is a **local-first personal cognitive assistant** that scans documents, images, audio, and calendar files on your phone, generates semantic descriptions using a local LLM (Qwen2.5-3B via Ollama), stores them in a vector database, and enables intelligent, self-verified retrieval.
+**Forgot me?** is a **local-first personal cognitive assistant** that scans documents, images, audio, and calendar files on your phone, generates semantic descriptions using a local LLM (Qwen2.5-3B via Ollama), stores them in a vector database, and enables intelligent, self-verified retrieval.
 
 It also proactively extracts upcoming events and deadlines and can notify you via Discord.
 
@@ -108,7 +108,7 @@ Phone (Expo Go)                    Your Machine (Docker)
 ## Project Structure
 
 ```
-mindvault/
+Forgot me?/
 ├── backend/
 │   ├── main.py                    # FastAPI app with all endpoints
 │   ├── agents/
@@ -322,7 +322,7 @@ ollama pull qwen2.5:3b
 ### 2. Start the backend
 
 ```bash
-cd mindvault
+cd Forgot me?
 docker compose up --build -d
 ```
 
@@ -347,7 +347,7 @@ Expected response:
 ### 3. Start the mobile app
 
 ```bash
-cd mindvault/mobile
+cd Forgot me?/mobile
 npm install
 npx expo start
 ```
@@ -409,7 +409,7 @@ Go to the **Home** tab and ask questions like:
 |----------|---------|-------------|
 | `OLLAMA_URL` | `http://localhost:11434` | Ollama API endpoint |
 | `CHROMA_PATH` | `./chroma_db` | ChromaDB persistent storage path |
-| `SQLITE_PATH` | `./mindvault.db` | SQLite database file path |
+| `SQLITE_PATH` | `./Forgot me?.db` | SQLite database file path |
 
 ---
 
