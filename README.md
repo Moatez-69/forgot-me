@@ -1,51 +1,103 @@
-# MindVault
-
-**A local-first personal cognitive assistant that scans your files, understands their content using a local LLM, and lets you query your knowledge base using natural language.**
-
-MindVault processes documents, images, audio, and calendar files on your phone, generates semantic descriptions using Qwen2.5-3B (running locally via Ollama), stores them in a vector database, and enables intelligent retrieval with self-verified answers. A built-in notification system proactively extracts upcoming events and deadlines from your files.
-
-**No data ever leaves your network. Everything runs locally.**
-
----
-
-## Architecture
-
+```{=html}
+<p align="center">
 ```
-Phone (Expo Go)                    Your Machine (Docker)
-+------------------+               +---------------------------+
-|  React Native    |  HTTP/JSON    |  FastAPI Backend           |
-|  Mobile App      | ------------> |  :8000                     |
-|                  |               |                            |
-|  - Scan folders  |               |  +-- Storage Agent ------+ |
-|  - Queue files   |               |  | Detect modality       | |
-|  - Query files   |               |  | Extract content       | |
-|  - Browse memory |               |  | LLM description       | |
-|  - View events   |               |  | LLM event extraction  | |
-+------------------+               |  | Embed + store         | |
-                                   |  +------------------------+ |
-                                   |                            |
-                                   |  ChromaDB    (vectors)     |
-                                   |  SQLite      (events)      |
-                                   |  Ollama      (Qwen2.5-3B)  |
-                                   +----------------------------+
+```{=html}
+<!-- Optional banner (put your own image in pictures/banner.png) -->
+```
+```{=html}
+<!-- <img src="pictures/banner.png" /> -->
+```
+```{=html}
+</p>
+```
+```{=html}
+<h1 align="center">
+```
+🧠 Forgot Me? 
+```{=html}
+</h1>
+```
+```{=html}
+<p align="center">
+```
+`<b>`{=html}A local-first personal cognitive assistant that scans your
+files, understands them with a local LLM, and lets you query your
+private knowledge base in natural language.`</b>`{=html}
+```{=html}
+</p>
+```
+```{=html}
+<p align="center">
+```
+`<img src="https://img.shields.io/badge/status-active-success">`{=html}
+`<img src="https://img.shields.io/badge/privacy-local--only-blue">`{=html}
+`<img src="https://img.shields.io/badge/LLM-Qwen2.5--3B-informational">`{=html}
+`<img src="https://img.shields.io/badge/platform-Android%20%7C%20Docker-lightgrey">`{=html}
+```{=html}
+</p>
+```
+```{=html}
+<p align="center">
+```
+`<img src="https://skillicons.dev/icons?i=python,fastapi,docker,sqlite,react,typescript,linux,git" />`{=html}
+```{=html}
+</p>
 ```
 
----
+------------------------------------------------------------------------
 
-## Features
+## 🚀 What is MindVault?
 
-- **Multi-modal file processing** -- PDF, images, audio, text, Word docs, emails, and calendar files
-- **Foreground processing queue** -- Files are queued and processed automatically one at a time with real-time status updates
-- **Smart queue management** -- View processing progress, retry failed files, cancel pending items, and clear completed entries
-- **Semantic search** -- Find files by meaning, not just keywords, using sentence-transformer embeddings
-- **Natural language Q&A** -- Ask questions about your files and get cited answers
-- **Self-verification** -- Every answer is checked by a second LLM call for groundedness
-- **Event extraction** -- Automatically finds deadlines, appointments, and reminders in your files
-- **Discord webhook notifications** -- Get notified via Discord when upcoming events are detected
-- **Category tagging** -- Files are auto-classified as work, study, personal, medical, finance, or other
-- **Privacy-first** -- All processing happens locally. No external API calls. Only descriptions are stored, not raw content
-- **Persistent storage** -- ChromaDB and SQLite data survive container restarts
+**MindVault** is a **local-first personal cognitive assistant** that
+scans documents, images, audio, and calendar files on your phone,
+generates semantic descriptions using a local LLM (Qwen2.5-3B via
+Ollama), stores them in a vector database, and enables intelligent,
+self-verified retrieval.
 
+It also proactively extracts upcoming events and deadlines and can
+notify you via Discord.
+
+> **No data ever leaves your network. Everything runs locally.**
+
+------------------------------------------------------------------------
+
+## 🏗️ Architecture
+
+    Phone (Expo Go)                    Your Machine (Docker)
+    +------------------+               +---------------------------+
+    |  React Native    |  HTTP/JSON    |  FastAPI Backend           |
+    |  Mobile App      | ------------> |  :8000                     |
+    |                  |               |                            |
+    |  - Scan folders  |               |  +-- Storage Agent ------+ |
+    |  - Queue files   |               |  | Detect modality       | |
+    |  - Query files   |               |  | Extract content       | |
+    |  - Browse memory |               |  | LLM description       | |
+    |  - View events   |               |  | LLM event extraction  | |
+    +------------------+               |  | Embed + store         | |
+                                       |  +------------------------+ |
+                                       |                            |
+                                       |  ChromaDB    (vectors)     |
+                                       |  SQLite      (events)      |
+                                       |  Ollama      (Qwen2.5-3B)  |
+                                       +----------------------------+
+
+------------------------------------------------------------------------
+
+## ✨ Features
+
+-   Multi-modal file processing
+-   Foreground processing queue
+-   Smart queue management
+-   Semantic search
+-   Natural language Q&A
+-   Self-verification
+-   Event extraction
+-   Discord webhook notifications
+-   Category tagging
+-   Privacy-first
+-   Persistent storage
+
+------------------------------------------------------------------------
 ---
 
 ## Tech Stack
