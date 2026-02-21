@@ -1,103 +1,75 @@
-```{=html}
 <p align="center">
-```
-```{=html}
 <!-- Optional banner (put your own image in pictures/banner.png) -->
-```
-```{=html}
 <!-- <img src="pictures/banner.png" /> -->
-```
-```{=html}
 </p>
-```
-```{=html}
-<h1 align="center">
-```
-🧠 Forgot Me? 
-```{=html}
-</h1>
-```
-```{=html}
-<p align="center">
-```
-`<b>`{=html}A local-first personal cognitive assistant that scans your
-files, understands them with a local LLM, and lets you query your
-private knowledge base in natural language.`</b>`{=html}
-```{=html}
-</p>
-```
-```{=html}
-<p align="center">
-```
-`<img src="https://img.shields.io/badge/status-active-success">`{=html}
-`<img src="https://img.shields.io/badge/privacy-local--only-blue">`{=html}
-`<img src="https://img.shields.io/badge/LLM-Qwen2.5--3B-informational">`{=html}
-`<img src="https://img.shields.io/badge/platform-Android%20%7C%20Docker-lightgrey">`{=html}
-```{=html}
-</p>
-```
-```{=html}
-<p align="center">
-```
-`<img src="https://skillicons.dev/icons?i=python,fastapi,docker,sqlite,react,typescript,linux,git" />`{=html}
-```{=html}
-</p>
-```
 
-------------------------------------------------------------------------
+<h1 align="center">🧠 MindVault</h1>
+
+<p align="center">
+<b>A local-first personal cognitive assistant that scans your files, understands them with a local LLM, and lets you query your private knowledge base in natural language.</b>
+</p>
+
+<p align="center">
+<img src="https://img.shields.io/badge/status-active-success">
+<img src="https://img.shields.io/badge/privacy-local--only-blue">
+<img src="https://img.shields.io/badge/LLM-Qwen2.5--3B-informational">
+<img src="https://img.shields.io/badge/platform-Android%20%7C%20Docker-lightgrey">
+</p>
+
+<p align="center">
+<img src="https://skillicons.dev/icons?i=python,fastapi,docker,sqlite,react,typescript,linux,git" />
+</p>
+
+---
 
 ## 🚀 What is MindVault?
 
-**MindVault** is a **local-first personal cognitive assistant** that
-scans documents, images, audio, and calendar files on your phone,
-generates semantic descriptions using a local LLM (Qwen2.5-3B via
-Ollama), stores them in a vector database, and enables intelligent,
-self-verified retrieval.
+**MindVault** is a **local-first personal cognitive assistant** that scans documents, images, audio, and calendar files on your phone, generates semantic descriptions using a local LLM (Qwen2.5-3B via Ollama), stores them in a vector database, and enables intelligent, self-verified retrieval.
 
-It also proactively extracts upcoming events and deadlines and can
-notify you via Discord.
+It also proactively extracts upcoming events and deadlines and can notify you via Discord.
 
 > **No data ever leaves your network. Everything runs locally.**
 
-------------------------------------------------------------------------
+---
 
 ## 🏗️ Architecture
 
-    Phone (Expo Go)                    Your Machine (Docker)
-    +------------------+               +---------------------------+
-    |  React Native    |  HTTP/JSON    |  FastAPI Backend           |
-    |  Mobile App      | ------------> |  :8000                     |
-    |                  |               |                            |
-    |  - Scan folders  |               |  +-- Storage Agent ------+ |
-    |  - Queue files   |               |  | Detect modality       | |
-    |  - Query files   |               |  | Extract content       | |
-    |  - Browse memory |               |  | LLM description       | |
-    |  - View events   |               |  | LLM event extraction  | |
-    +------------------+               |  | Embed + store         | |
-                                       |  +------------------------+ |
-                                       |                            |
-                                       |  ChromaDB    (vectors)     |
-                                       |  SQLite      (events)      |
-                                       |  Ollama      (Qwen2.5-3B)  |
-                                       +----------------------------+
+```
+Phone (Expo Go)                    Your Machine (Docker)
++------------------+               +---------------------------+
+|  React Native    |  HTTP/JSON    |  FastAPI Backend           |
+|  Mobile App      | ------------> |  :8000                     |
+|                  |               |                            |
+|  - Scan folders  |               |  +-- Storage Agent ------+ |
+|  - Queue files   |               |  | Detect modality       | |
+|  - Query files   |               |  | Extract content       | |
+|  - Browse memory |               |  | LLM description       | |
+|  - View events   |               |  | LLM event extraction  | |
++------------------+               |  | Embed + store         | |
+                                   |  +------------------------+ |
+                                   |                            |
+                                   |  ChromaDB    (vectors)     |
+                                   |  SQLite      (events)      |
+                                   |  Ollama      (Qwen2.5-3B)  |
+                                   +----------------------------+
+```
 
-------------------------------------------------------------------------
+---
 
 ## ✨ Features
 
--   Multi-modal file processing
--   Foreground processing queue
--   Smart queue management
--   Semantic search
--   Natural language Q&A
--   Self-verification
--   Event extraction
--   Discord webhook notifications
--   Category tagging
--   Privacy-first
--   Persistent storage
+- Multi-modal file processing
+- Foreground processing queue
+- Smart queue management
+- Semantic search
+- Natural language Q&A
+- Self-verification
+- Event extraction
+- Discord webhook notifications
+- Category tagging
+- Privacy-first
+- Persistent storage
 
-------------------------------------------------------------------------
 ---
 
 ## Tech Stack
@@ -105,7 +77,7 @@ notify you via Discord.
 ### Backend
 
 | Component | Technology | Purpose |
-|-----------|-----------|---------|
+|-----------|------------|---------|
 | Framework | FastAPI + Uvicorn | REST API server |
 | Vector DB | ChromaDB (persistent mode) | Semantic search over file descriptions |
 | Embeddings | all-MiniLM-L6-v2 (sentence-transformers) | 384-dim local embeddings |
@@ -122,7 +94,7 @@ notify you via Discord.
 ### Mobile
 
 | Component | Technology | Purpose |
-|-----------|-----------|---------|
+|-----------|------------|---------|
 | Framework | React Native 0.81 + Expo SDK 54 | Cross-platform mobile app |
 | Navigation | expo-router 6.x (file-based) | Tab navigation with 5 tabs |
 | File access | expo-file-system (StorageAccessFramework) | Read files from device storage |
@@ -285,7 +257,7 @@ When a file is ingested, the storage agent executes this pipeline:
 8. Return result to mobile app
 ```
 
-**Key design decision:** Only the LLM-generated description is embedded and stored -- not the raw file content. This provides better semantic search results and preserves privacy.
+**Key design decision:** Only the LLM-generated description is embedded and stored — not the raw file content. This provides better semantic search results and preserves privacy.
 
 ---
 
@@ -314,7 +286,7 @@ When a file is ingested, the storage agent executes this pipeline:
 ## Supported File Types
 
 | Type | Extensions | Processor | What Happens |
-|------|-----------|-----------|-------------|
+|------|------------|-----------|--------------|
 | PDF | .pdf | PyMuPDF | All pages extracted, text concatenated |
 | Plain text | .txt, .md | UTF-8 decode | Direct text with encoding fallback |
 | Word | .docx | python-docx | Paragraphs extracted and joined |
@@ -443,8 +415,8 @@ Go to the **Home** tab and ask questions like:
 
 ## Constraints
 
-1. **No external AI APIs** -- Only Ollama with local models. No OpenAI, Anthropic, or any hosted service.
-2. **Model size limit** -- Qwen2.5-3B (under 4B parameters).
-3. **Local network only** -- Mobile app connects to backend via LAN IP.
-4. **Description-based search** -- ChromaDB stores semantic descriptions, not raw file content.
-5. **Self-verification required** -- Every query answer is verified for groundedness before being returned.
+1. **No external AI APIs** — Only Ollama with local models. No OpenAI, Anthropic, or any hosted service.
+2. **Model size limit** — Qwen2.5-3B (under 4B parameters).
+3. **Local network only** — Mobile app connects to backend via LAN IP.
+4. **Description-based search** — ChromaDB stores semantic descriptions, not raw file content.
+5. **Self-verification required** — Every query answer is verified for groundedness before being returned.
