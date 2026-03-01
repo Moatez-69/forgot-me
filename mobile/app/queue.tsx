@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useIngestQueue } from "../hooks/useIngestQueue";
 import FadeIn from "../components/FadeIn";
+import AmbientBackground from "../components/AmbientBackground";
 import {
   colors,
   spacing,
@@ -106,6 +107,7 @@ export default function QueueScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <AmbientBackground intensity="soft" />
       {/* Status Header */}
       <View style={styles.statusCard}>
         <View style={styles.statusHeader}>

@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import MemoryCard from "../components/MemoryCard";
 import FadeIn from "../components/FadeIn";
 import SkeletonCard from "../components/SkeletonCard";
+import AmbientBackground from "../components/AmbientBackground";
 import { api, MemoryItem } from "../services/api";
 import {
   colors,
@@ -200,6 +201,7 @@ export default function MemoriesScreen() {
 
   return (
     <View style={styles.container}>
+      <AmbientBackground intensity="soft" />
       {/* Search bar with view toggle */}
       <View style={styles.searchArea}>
         <View

@@ -2,20 +2,20 @@
 
 export const colors = {
   // Core palette
-  primary: "#7c6fff",
-  primaryMuted: "#7c6fff20",
-  accent: "#00d4aa",
-  accentMuted: "#00d4aa20",
-  background: "#0a0a14",
-  card: "#12122a",
-  cardElevated: "#1a1a36",
-  border: "#252545",
+  primary: "#2f7dff",
+  primaryMuted: "#2f7dff20",
+  accent: "#13c0b4",
+  accentMuted: "#13c0b420",
+  background: "#070d1a",
+  card: "#101a2e",
+  cardElevated: "#17253e",
+  border: "#223556",
 
   // Text
-  textPrimary: "#eaeaef",
-  textSecondary: "#a8a8be",
-  textMuted: "#5e5e78",
-  textDark: "#4a4a60",
+  textPrimary: "#edf2ff",
+  textSecondary: "#aab7d3",
+  textMuted: "#6a7f9f",
+  textDark: "#536784",
 
   // Status
   success: "#00d68f",
@@ -40,14 +40,14 @@ export const colors = {
   // Modality icon tints
   modalityPdf: "#ff4d6a",
   modalityImage: "#4a9eff",
-  modalityAudio: "#a78bfa",
+  modalityAudio: "#4f8cff",
   modalityText: "#00d68f",
   modalityCalendar: "#ffaa2c",
   modalityEmail: "#00d4aa",
 
   // Gradient helpers
-  gradientStart: "#7c6fff",
-  gradientEnd: "#00d4aa",
+  gradientStart: "#1053d6",
+  gradientEnd: "#13c0b4",
 } as const;
 
 export const CATEGORY_COLORS: Record<string, string> = {

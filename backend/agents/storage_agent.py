@@ -57,6 +57,7 @@ async def ingest_file(
     file_path: str,
     file_content_base64: str,
     filename: str,
+    user_id: str = "default",
 ) -> IngestResult:
     """
     Core ingestion pipeline — the heart of MindVault.
@@ -79,6 +80,18 @@ async def ingest_file(
         # 2. Detect modality
         modality = detect_modality(filename)
         logger.info(f"Ingesting {filename} as {modality}")
+
+        # User-scoped latest-at-path identity
+        doc_id = hashlib.sha256(f"{user_id}:{file_path}".encode()).hexdigest()[:16]
+        existing = vector_store.get_document(doc_id, user_id=user_id)
+        if existing and existing.get("content_hash") == content_hash:
+            return IngestResult(
+                success=True,
+                file_path=file_path,
+                description=existing.get("description", f"File: {filename}"),
+                category=existing.get("category", "other"),
+                has_events=bool(existing.get("has_events", False)),
+            )
 
         # 3. Extract text content
         content = extract_content(file_bytes, filename, modality)
@@ -106,7 +119,6 @@ async def ingest_file(
         events = event_result.get("events", [])
 
         # 6. Store in ChromaDB — only file_path and description for lightweight search
-        doc_id = hashlib.sha256(file_path.encode()).hexdigest()[:16]
         now = datetime.utcnow().isoformat()
 
         # Minimal metadata: just enough to find and display the file path
@@ -118,13 +130,21 @@ async def ingest_file(
             "category": category,
             "timestamp": now,
             "has_events": has_events,
+            "content_hash": content_hash,
+            "user_id": user_id,
             "doc_id": doc_id,
         }
         vector_store.store_document(doc_id, description, metadata)
 
-        # 7. Store events in SQLite if found
+        # 7. Refresh events for this source file then store newly extracted ones
+        await notif_service.delete_events_by_source(file_path, user_id=user_id)
         if has_events and events:
-            await notif_service.store_events(events, filename, file_path)
+            await notif_service.store_events(
+                events,
+                filename,
+                file_path,
+                user_id=user_id,
+            )
 
         # 8. Return result
         return IngestResult(

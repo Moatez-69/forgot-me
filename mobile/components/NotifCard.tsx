@@ -1,5 +1,12 @@
-import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from "react-native";
+import React, { useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Alert,
+  Animated,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, radii } from "../constants/theme";
 import type { NotificationEvent } from "../services/api";
@@ -10,6 +17,7 @@ interface Props {
 }
 
 export default function NotifCard({ event, onDismiss }: Props) {
+  const scale = useRef(new Animated.Value(1)).current;
   const urgency = getUrgency(event.date);
 
   const handleLongPress = () => {
@@ -26,53 +34,77 @@ export default function NotifCard({ event, onDismiss }: Props) {
 
   return (
     <TouchableOpacity
-      style={[styles.card, { borderLeftColor: urgency.color }]}
+      style={styles.touch}
+      onPressIn={() =>
+        Animated.spring(scale, {
+          toValue: 0.985,
+          useNativeDriver: true,
+          speed: 30,
+          bounciness: 4,
+        }).start()
+      }
+      onPressOut={() =>
+        Animated.spring(scale, {
+          toValue: 1,
+          useNativeDriver: true,
+          speed: 24,
+          bounciness: 5,
+        }).start()
+      }
+      delayLongPress={280}
       onLongPress={handleLongPress}
       activeOpacity={0.7}
       accessibilityLabel={`Event: ${event.title}, ${urgency.label || "upcoming"}, ${event.description}. Long press to dismiss.`}
       accessibilityRole="summary"
     >
-      <View style={styles.header}>
-        <View
-          style={[styles.iconWrap, { backgroundColor: `${urgency.color}18` }]}
-        >
-          <Ionicons name="calendar" size={18} color={urgency.color} />
-        </View>
-        <Text style={styles.title} numberOfLines={1}>
-          {event.title}
-        </Text>
-        {urgency.label !== "" && (
+      <Animated.View
+        style={[
+          styles.card,
+          { borderLeftColor: urgency.color, transform: [{ scale }] },
+        ]}
+      >
+        <View style={styles.header}>
           <View
-            style={[
-              styles.urgencyBadge,
-              {
-                backgroundColor: `${urgency.color}22`,
-                borderColor: `${urgency.color}66`,
-              },
-            ]}
+            style={[styles.iconWrap, { backgroundColor: `${urgency.color}18` }]}
           >
-            <Text style={[styles.urgencyText, { color: urgency.color }]}>
-              {urgency.label}
-            </Text>
+            <Ionicons name="calendar" size={18} color={urgency.color} />
+          </View>
+          <Text style={styles.title} numberOfLines={1}>
+            {event.title}
+          </Text>
+          {urgency.label !== "" && (
+            <View
+              style={[
+                styles.urgencyBadge,
+                {
+                  backgroundColor: `${urgency.color}22`,
+                  borderColor: `${urgency.color}66`,
+                },
+              ]}
+            >
+              <Text style={[styles.urgencyText, { color: urgency.color }]}>
+                {urgency.label}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {event.date && (
+          <View style={styles.dateRow}>
+            <Ionicons name="time-outline" size={13} color={colors.accent} />
+            <Text style={styles.date}>{formatDate(event.date)}</Text>
           </View>
         )}
-      </View>
 
-      {event.date && (
-        <View style={styles.dateRow}>
-          <Ionicons name="time-outline" size={13} color={colors.accent} />
-          <Text style={styles.date}>{formatDate(event.date)}</Text>
+        <Text style={styles.description} numberOfLines={2}>
+          {event.description}
+        </Text>
+
+        <View style={styles.sourceRow}>
+          <Ionicons name="document-outline" size={12} color={colors.textDark} />
+          <Text style={styles.source}>{event.source_file}</Text>
         </View>
-      )}
-
-      <Text style={styles.description} numberOfLines={2}>
-        {event.description}
-      </Text>
-
-      <View style={styles.sourceRow}>
-        <Ionicons name="document-outline" size={12} color={colors.textDark} />
-        <Text style={styles.source}>{event.source_file}</Text>
-      </View>
+      </Animated.View>
     </TouchableOpacity>
   );
 }
@@ -122,11 +154,13 @@ function formatDate(dateStr: string): string {
 }
 
 const styles = StyleSheet.create({
+  touch: {
+    marginBottom: spacing.md,
+  },
   card: {
     backgroundColor: colors.card,
     borderRadius: radii.lg,
     padding: spacing.lg,
-    marginBottom: spacing.md,
     borderLeftWidth: 3,
     borderWidth: 1,
     borderColor: colors.border,

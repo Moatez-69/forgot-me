@@ -63,6 +63,12 @@ ALLOWED_EXTENSIONS = {
     ".ics",
     ".eml",
 }
+DEFAULT_USER_ID = "default"
+
+
+def _normalize_user_id(user_id: str | None) -> str:
+    value = (user_id or "").strip()
+    return value or DEFAULT_USER_ID
 
 
 @asynccontextmanager
@@ -128,6 +134,7 @@ async def ingest_file(request: IngestRequest):
         file_path=request.file_path,
         file_content_base64=request.file_content_base64,
         filename=request.filename,
+        user_id=_normalize_user_id(request.user_id),
     )
 
 
@@ -143,6 +150,7 @@ async def ingest_batch(request: BatchIngestRequest):
             file_path=f.file_path,
             file_content_base64=f.file_content_base64,
             filename=f.filename,
+            user_id=_normalize_user_id(f.user_id),
         )
         for f in request.files
     ]
@@ -175,7 +183,8 @@ async def query_files(request: QueryRequest):
     Includes self-verification step.
     """
     # Retrieve relevant documents from ChromaDB
-    docs = vector_store.query_documents(request.question, request.top_k)
+    user_id = _normalize_user_id(request.user_id)
+    docs = vector_store.query_documents(request.question, request.top_k, user_id=user_id)
 
     if not docs:
         return QueryResponse(
@@ -227,15 +236,22 @@ async def query_files(request: QueryRequest):
     )
 
     # Generate answer using LLM
-    answer = await llm_service.answer_query(
-        request.question, context, request.conversation_history
-    )
-
-    # Self-verification: check if answer is grounded in context
-    verified = await llm_service.verify_answer(request.question, context, answer)
+    try:
+        answer = await llm_service.answer_query(
+            request.question, context, request.conversation_history
+        )
+        # Self-verification: check if answer is grounded in context
+        verified = await llm_service.verify_answer(request.question, context, answer)
+    except Exception:
+        logger.exception("Query failed due to local model error")
+        answer = (
+            "I found related files, but the local language model is currently unavailable. "
+            "Please try again in a moment."
+        )
+        verified = False
 
     if not verified:
-        answer += "\n\n⚠️ Note: This answer may not be fully grounded in your files. Please verify the information."
+        answer += "\n\nNote: This answer may not be fully grounded in your files."
 
     return QueryResponse(answer=answer, sources=sources, verified=verified)
 
@@ -247,22 +263,34 @@ async def get_memories(
     modality: str | None = None,
     search: str | None = None,
     limit: int = 50,
+    user_id: str = DEFAULT_USER_ID,
 ):
     """Retrieve stored memories with optional filtering."""
+    scoped_user_id = _normalize_user_id(user_id)
     if search:
-        memories = vector_store.search_memories(search, category=category, limit=limit)
+        memories = vector_store.search_memories(
+            search,
+            category=category,
+            limit=limit,
+            user_id=scoped_user_id,
+        )
     else:
         memories = vector_store.get_all_memories(
-            category=category, modality=modality, limit=limit
+            category=category,
+            modality=modality,
+            limit=limit,
+            user_id=scoped_user_id,
         )
     return MemoriesResponse(memories=memories, total=len(memories))
 
 
 # --- GET /notifications ---
 @app.get("/notifications", response_model=NotificationsResponse)
-async def get_notifications():
+async def get_notifications(user_id: str = DEFAULT_USER_ID):
     """Get upcoming events extracted from ingested files."""
-    events = await notif_service.get_upcoming_events()
+    events = await notif_service.get_upcoming_events(
+        user_id=_normalize_user_id(user_id)
+    )
     notif_events = [
         NotificationEvent(
             id=e["id"],
@@ -325,9 +353,9 @@ async def health_check():
 
 # --- GET /files/{doc_id} ---
 @app.get("/files/{doc_id}")
-async def get_file_metadata(doc_id: str):
+async def get_file_metadata(doc_id: str, user_id: str = DEFAULT_USER_ID):
     """Get file metadata by document ID."""
-    doc = vector_store.get_document(doc_id)
+    doc = vector_store.get_document(doc_id, user_id=_normalize_user_id(user_id))
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return {
@@ -343,14 +371,15 @@ async def get_file_metadata(doc_id: str):
 
 # --- DELETE /memories/{doc_id} ---
 @app.delete("/memories/{doc_id}", response_model=DeleteResponse)
-async def delete_memory(doc_id: str):
+async def delete_memory(doc_id: str, user_id: str = DEFAULT_USER_ID):
     """Delete a memory and its associated events."""
-    doc = vector_store.get_document(doc_id)
+    scoped_user_id = _normalize_user_id(user_id)
+    doc = vector_store.get_document(doc_id, user_id=scoped_user_id)
     if not doc:
         return DeleteResponse(success=False, message="Document not found")
 
     file_path = doc.get("file_path", "")
-    deleted = vector_store.delete_document(doc_id)
+    deleted = vector_store.delete_document(doc_id, user_id=scoped_user_id)
     if not deleted:
         return DeleteResponse(
             success=False, message="Failed to delete from vector store"
@@ -358,7 +387,7 @@ async def delete_memory(doc_id: str):
 
     # Cascade: delete associated events
     if file_path:
-        await notif_service.delete_events_by_source(file_path)
+        await notif_service.delete_events_by_source(file_path, user_id=scoped_user_id)
 
     return DeleteResponse(
         success=True, message=f"Deleted {doc.get('file_name', doc_id)}"
@@ -367,27 +396,29 @@ async def delete_memory(doc_id: str):
 
 # --- DELETE /events/{event_id} ---
 @app.delete("/events/{event_id}", response_model=EventDeleteResponse)
-async def delete_event(event_id: int):
+async def delete_event(event_id: int, user_id: str = DEFAULT_USER_ID):
     """Delete a single event."""
-    deleted = await notif_service.delete_event(event_id)
+    deleted = await notif_service.delete_event(event_id, user_id=_normalize_user_id(user_id))
     return EventDeleteResponse(success=deleted, deleted_count=1 if deleted else 0)
 
 
 # --- POST /events/cleanup ---
 @app.post("/events/cleanup", response_model=EventDeleteResponse)
-async def cleanup_events():
+async def cleanup_events(user_id: str = DEFAULT_USER_ID):
     """Delete all past events."""
-    count = await notif_service.delete_past_events()
+    count = await notif_service.delete_past_events(user_id=_normalize_user_id(user_id))
     return EventDeleteResponse(success=True, deleted_count=count)
 
 
 # --- GET /graph ---
 @app.get("/graph", response_model=GraphResponse)
-async def get_graph():
+async def get_graph(user_id: str = DEFAULT_USER_ID):
     """Build a knowledge graph from all documents."""
     import numpy as np
 
-    all_docs = vector_store.get_all_documents_with_metadata()
+    all_docs = vector_store.get_all_documents_with_metadata(
+        user_id=_normalize_user_id(user_id)
+    )
 
     nodes = []
     edges = []
@@ -466,9 +497,11 @@ async def get_graph():
 
 # --- GET /graph/stats ---
 @app.get("/graph/stats", response_model=GraphStatsResponse)
-async def get_graph_stats():
+async def get_graph_stats(user_id: str = DEFAULT_USER_ID):
     """Get graph statistics."""
-    all_docs = vector_store.get_all_documents_with_metadata()
+    all_docs = vector_store.get_all_documents_with_metadata(
+        user_id=_normalize_user_id(user_id)
+    )
     categories = set(d.get("category", "other") for d in all_docs)
     return GraphStatsResponse(
         total_nodes=len(all_docs) + len(categories),
@@ -480,13 +513,14 @@ async def get_graph_stats():
 
 # --- GET /graph/file/{doc_id} ---
 @app.get("/graph/file/{doc_id}")
-async def get_graph_file(doc_id: str):
+async def get_graph_file(doc_id: str, user_id: str = DEFAULT_USER_ID):
     """Get a file's graph node and connections."""
-    doc = vector_store.get_document(doc_id)
+    scoped_user_id = _normalize_user_id(user_id)
+    doc = vector_store.get_document(doc_id, user_id=scoped_user_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    related = vector_store.get_related_documents(doc_id, top_k=5)
+    related = vector_store.get_related_documents(doc_id, top_k=5, user_id=scoped_user_id)
     return {
         "node": {
             "id": doc_id,
@@ -501,9 +535,13 @@ async def get_graph_file(doc_id: str):
 
 # --- GET /graph/related/{doc_id} ---
 @app.get("/graph/related/{doc_id}", response_model=RelatedFilesResponse)
-async def get_related_files(doc_id: str):
+async def get_related_files(doc_id: str, user_id: str = DEFAULT_USER_ID):
     """Get files related to a given document."""
-    related_docs = vector_store.get_related_documents(doc_id, top_k=5)
+    related_docs = vector_store.get_related_documents(
+        doc_id,
+        top_k=5,
+        user_id=_normalize_user_id(user_id),
+    )
     related = [
         MemoryItem(
             file_path=d.get("file_path", ""),
@@ -525,9 +563,12 @@ async def get_related_files(doc_id: str):
 
 # --- GET /graph/category/{category} ---
 @app.get("/graph/category/{category}")
-async def get_graph_category(category: str):
+async def get_graph_category(category: str, user_id: str = DEFAULT_USER_ID):
     """Get all files in a category."""
-    docs = vector_store.get_documents_by_category(category)
+    docs = vector_store.get_documents_by_category(
+        category,
+        user_id=_normalize_user_id(user_id),
+    )
     return {
         "category": category,
         "files": docs,
@@ -539,8 +580,9 @@ async def get_graph_category(category: str):
 @app.post("/webhooks", response_model=WebhookResponse)
 async def create_webhook(body: WebhookCreate):
     """Register a new Discord webhook URL."""
-    webhook_id = await save_webhook(body.url, body.label)
-    webhooks = await get_webhooks()
+    user_id = _normalize_user_id(body.user_id)
+    webhook_id = await save_webhook(str(body.url), body.label, user_id=user_id)
+    webhooks = await get_webhooks(user_id=user_id)
     webhook = next((w for w in webhooks if w["id"] == webhook_id), None)
     if not webhook:
         raise HTTPException(status_code=500, detail="Failed to save webhook")
@@ -555,9 +597,9 @@ async def create_webhook(body: WebhookCreate):
 
 # --- GET /webhooks ---
 @app.get("/webhooks", response_model=WebhooksListResponse)
-async def list_webhooks():
+async def list_webhooks(user_id: str = DEFAULT_USER_ID):
     """List all active webhooks."""
-    webhooks = await get_webhooks()
+    webhooks = await get_webhooks(user_id=_normalize_user_id(user_id))
     items = [
         WebhookResponse(
             id=w["id"],
@@ -573,22 +615,27 @@ async def list_webhooks():
 
 # --- DELETE /webhooks/{webhook_id} ---
 @app.delete("/webhooks/{webhook_id}", response_model=EventDeleteResponse)
-async def remove_webhook(webhook_id: int):
+async def remove_webhook(webhook_id: int, user_id: str = DEFAULT_USER_ID):
     """Delete a webhook by ID."""
-    deleted = await delete_webhook(webhook_id)
+    deleted = await delete_webhook(webhook_id, user_id=_normalize_user_id(user_id))
     return EventDeleteResponse(success=deleted, deleted_count=1 if deleted else 0)
 
 
 # --- POST /webhooks/{webhook_id}/test ---
 @app.post("/webhooks/{webhook_id}/test")
-async def test_webhook(webhook_id: int):
+async def test_webhook(webhook_id: int, user_id: str = DEFAULT_USER_ID):
     """Send a test notification through a specific webhook."""
-    webhooks = await get_webhooks()
+    scoped_user_id = _normalize_user_id(user_id)
+    webhooks = await get_webhooks(user_id=scoped_user_id)
     webhook = next((w for w in webhooks if w["id"] == webhook_id), None)
     if not webhook:
         raise HTTPException(status_code=404, detail="Webhook not found")
     count = await trigger_webhooks(
-        "Test Notification", "This is a test from Forgot Me", None
+        "Test Notification",
+        "This is a test from Forgot Me",
+        None,
+        user_id=scoped_user_id,
+        webhook_id=webhook_id,
     )
     return {"success": count > 0, "delivered": count}
 
@@ -609,13 +656,14 @@ async def get_queue_status():
 
 # --- POST /admin/clear-data ---
 @app.post("/admin/clear-data")
-async def clear_all_data():
+async def clear_all_data(user_id: str = DEFAULT_USER_ID):
     """
     Clear all data from ChromaDB and SQLite.
     Use with caution - this deletes all memories and events!
     """
-    chroma_count = clear_all_documents()
-    events_count = await clear_all_events()
+    scoped_user_id = _normalize_user_id(user_id)
+    chroma_count = clear_all_documents(user_id=scoped_user_id)
+    events_count = await clear_all_events(user_id=scoped_user_id)
 
     return {
         "success": True,

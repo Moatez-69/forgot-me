@@ -1,7 +1,6 @@
-from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, HttpUrl, field_validator
 
 # --- Request schemas ---
 
@@ -30,6 +29,7 @@ class IngestRequest(BaseModel):
     file_path: str
     file_content_base64: str
     filename: str
+    user_id: str = "default"
 
 
 class BatchIngestRequest(BaseModel):
@@ -39,7 +39,8 @@ class BatchIngestRequest(BaseModel):
 class QueryRequest(BaseModel):
     question: str
     top_k: int = 5
-    conversation_history: list[dict] = []
+    conversation_history: list[dict] = Field(default_factory=list)
+    user_id: str = "default"
 
 
 # --- Response schemas ---
@@ -149,7 +150,7 @@ class GraphNode(BaseModel):
     id: str
     type: str
     label: str
-    metadata: dict = {}
+    metadata: dict = Field(default_factory=dict)
 
 
 class GraphEdge(BaseModel):
@@ -183,8 +184,17 @@ class RelatedFilesResponse(BaseModel):
 
 
 class WebhookCreate(BaseModel):
-    url: str
+    url: HttpUrl
     label: str = "Discord"
+    user_id: str = "default"
+
+    @field_validator("url")
+    @classmethod
+    def validate_discord_url(cls, value: HttpUrl) -> HttpUrl:
+        host = value.host or ""
+        if host not in {"discord.com", "www.discord.com", "discordapp.com"}:
+            raise ValueError("Webhook URL must be a Discord URL")
+        return value
 
 
 class WebhookResponse(BaseModel):
@@ -217,4 +227,4 @@ class ExtractedEvent(BaseModel):
 
 class LLMEventExtraction(BaseModel):
     has_events: bool
-    events: list[ExtractedEvent] = []
+    events: list[ExtractedEvent] = Field(default_factory=list)

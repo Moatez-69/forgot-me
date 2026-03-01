@@ -174,7 +174,7 @@ class TestDeleteEndpoints:
         resp = api_client.delete("/events/99999")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["success"] is True
+        assert data["success"] is False
         assert data["deleted_count"] == 0
 
     def test_cleanup_events(self, api_client):
@@ -218,11 +218,12 @@ class TestGraphEndpoints:
         resp = api_client.get("/graph/category/work")
         assert resp.status_code == 200
         data = resp.json()
-        assert "nodes" in data
+        assert "files" in data
+        assert "total" in data
 
     def test_get_graph_file_not_found(self, api_client):
         resp = api_client.get("/graph/file/nonexistent_id")
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
 
 class TestQueryWithHistory:

@@ -12,6 +12,7 @@ import { Ionicons } from "@expo/vector-icons";
 import NotifCard from "../components/NotifCard";
 import FadeIn from "../components/FadeIn";
 import SkeletonCard from "../components/SkeletonCard";
+import AmbientBackground from "../components/AmbientBackground";
 import { api, NotificationEvent } from "../services/api";
 import { colors, spacing, radii } from "../constants/theme";
 
@@ -83,6 +84,7 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.container}>
+      <AmbientBackground intensity="soft" />
       {/* Error banner */}
       {error && (
         <View style={styles.errorBanner}>

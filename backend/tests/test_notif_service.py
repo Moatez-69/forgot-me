@@ -103,3 +103,36 @@ class TestNotifService:
             from services.notif_service import check_connection
 
             assert await check_connection() is True
+
+    async def test_events_are_user_scoped(self, temp_db):
+        with patch("services.notif_service.DB_PATH", temp_db):
+            from services.notif_service import get_upcoming_events, store_events
+
+            await store_events(
+                [{"title": "U1 Event", "date": None, "description": "d"}],
+                "u1.txt",
+                "/u1.txt",
+                user_id="u1",
+            )
+            await store_events(
+                [{"title": "U2 Event", "date": None, "description": "d"}],
+                "u2.txt",
+                "/u2.txt",
+                user_id="u2",
+            )
+
+            u1_events = await get_upcoming_events(user_id="u1")
+            u2_events = await get_upcoming_events(user_id="u2")
+            assert [e["title"] for e in u1_events] == ["U1 Event"]
+            assert [e["title"] for e in u2_events] == ["U2 Event"]
+
+    async def test_save_webhook_replaces_previous_for_user(self, temp_db):
+        with patch("services.notif_service.DB_PATH", temp_db):
+            from services.notif_service import get_webhooks, save_webhook
+
+            await save_webhook("https://discord.com/api/webhooks/1/a", user_id="u1")
+            await save_webhook("https://discord.com/api/webhooks/2/b", user_id="u1")
+            hooks = await get_webhooks(user_id="u1")
+
+            assert len(hooks) == 1
+            assert hooks[0]["url"] == "https://discord.com/api/webhooks/2/b"

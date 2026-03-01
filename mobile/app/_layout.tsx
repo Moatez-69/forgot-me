@@ -21,6 +21,7 @@ import {
   WebhookResponse,
 } from "../services/api";
 import * as BackgroundTask from "../services/backgroundTask";
+import AmbientBackground from "../components/AmbientBackground";
 import { colors, spacing, radii, typography } from "../constants/theme";
 
 const logoImage = require("../assets/logo.png");
@@ -167,12 +168,14 @@ export default function Layout() {
 
   if (!setupDone) {
     return (
-      <ScrollView
-        style={{ flex: 1, backgroundColor: colors.background }}
-        contentContainerStyle={setupStyles.container}
-        keyboardShouldPersistTaps="handled"
-      >
-        <StatusBar barStyle="light-content" />
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        <AmbientBackground intensity="medium" />
+        <ScrollView
+          style={{ flex: 1, backgroundColor: "transparent" }}
+          contentContainerStyle={setupStyles.container}
+          keyboardShouldPersistTaps="handled"
+        >
+          <StatusBar barStyle="light-content" />
 
         {/* Logo section */}
         <View style={setupStyles.logoSection}>
@@ -350,7 +353,7 @@ export default function Layout() {
                 <View style={setupStyles.webhookItemLeft}>
                   <View style={setupStyles.webhookIconWrap}>
                     <Ionicons
-                      name="logo-discord"
+                      name="notifications-outline"
                       size={16}
                       color={colors.primary}
                     />
@@ -415,7 +418,8 @@ export default function Layout() {
         </TouchableOpacity>
 
         <View style={{ height: 40 }} />
-      </ScrollView>
+        </ScrollView>
+      </View>
     );
   }
 

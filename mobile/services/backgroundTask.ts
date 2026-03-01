@@ -11,14 +11,30 @@
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { readAsStringAsync, EncodingType } from "expo-file-system/legacy";
 import { api, IngestResult } from "./api";
 
-let Notifications: any = null;
-try {
-  Notifications = require("expo-notifications");
-} catch (e) {
-  console.log("expo-notifications not available (using Expo Go?)");
+let _notificationsModule: any = null;
+let _notificationsUnavailableLogged = false;
+let _notificationsLoadAttempted = false;
+
+function _isExpoGoClient(): boolean {
+  return Constants.appOwnership === "expo";
+}
+
+function _getNotificationsModule(): any | null {
+  // Expo Go (SDK 53+) does not support android remote notifications.
+  if (_isExpoGoClient()) return null;
+  if (_notificationsLoadAttempted) return _notificationsModule;
+
+  _notificationsLoadAttempted = true;
+  try {
+    _notificationsModule = require("expo-notifications");
+  } catch {
+    _notificationsModule = null;
+  }
+  return _notificationsModule;
 }
 
 const INGEST_QUEUE_KEY = "mindvault_ingest_queue";
@@ -330,7 +346,17 @@ function _sendNotification(
   title: string,
   body: string,
 ): void {
-  if (!Notifications) return;
+  const Notifications = _getNotificationsModule();
+  if (!Notifications) {
+    if (!_notificationsUnavailableLogged) {
+      _notificationsUnavailableLogged = true;
+      console.log(
+        "Local notifications disabled in Expo Go. Use a development build to enable them.",
+      );
+    }
+    return;
+  }
+
   Notifications.scheduleNotificationAsync({
     content: { title, body, data: { filename, type: "ingestion" } },
     trigger: null,

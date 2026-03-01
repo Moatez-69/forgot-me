@@ -13,6 +13,7 @@ import { StorageAccessFramework } from "expo-file-system/legacy";
 import { api } from "../services/api";
 import * as BackgroundTask from "../services/backgroundTask";
 import FadeIn from "../components/FadeIn";
+import AmbientBackground from "../components/AmbientBackground";
 import {
   colors,
   spacing,
@@ -165,6 +166,7 @@ export default function ScanScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <AmbientBackground intensity="medium" />
       <TouchableOpacity
         style={styles.scanButton}
         onPress={handleScanFolder}

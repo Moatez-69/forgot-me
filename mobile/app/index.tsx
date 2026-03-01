@@ -11,9 +11,11 @@ import {
 } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import QueryInput from "../components/QueryInput";
 import MemoryCard from "../components/MemoryCard";
 import FadeIn from "../components/FadeIn";
+import AmbientBackground from "../components/AmbientBackground";
 import { api, QueryResponse, MemoryItem, getFileUrl } from "../services/api";
 import { showSetup } from "./_layout";
 import {
@@ -25,6 +27,17 @@ import {
 } from "../constants/theme";
 
 const logoImage = require("../assets/logo.png");
+const AUTO_READ_KEY = "mindvault_auto_read_answers";
+type SpeechLike = {
+  speak: (text: string, options?: Record<string, unknown>) => void;
+  stop: () => void;
+};
+let Speech: SpeechLike | null = null;
+try {
+  Speech = require("expo-speech");
+} catch {
+  Speech = null;
+}
 
 interface ConversationTurn {
   id: number;
@@ -45,6 +58,9 @@ export default function HomeScreen() {
   const [recentMemories, setRecentMemories] = useState<MemoryItem[]>([]);
   const [eventCount, setEventCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [autoRead, setAutoRead] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speakingTurnId, setSpeakingTurnId] = useState<number | null>(null);
 
   const loadRecent = useCallback(async () => {
     try {
@@ -70,6 +86,64 @@ export default function HomeScreen() {
     loadEventCount();
   }, [loadRecent, loadEventCount]);
 
+  useEffect(() => {
+    (async () => {
+      const saved = await AsyncStorage.getItem(AUTO_READ_KEY);
+      if (saved !== null) setAutoRead(saved === "true");
+    })();
+  }, []);
+
+  const sanitizeForSpeech = (text: string): string =>
+    text
+      .replace(/\s+/g, " ")
+      .replace(/https?:\/\/\S+/g, "")
+      .trim();
+
+  const stopSpeaking = () => {
+    if (Speech) Speech.stop();
+    setIsSpeaking(false);
+    setSpeakingTurnId(null);
+  };
+
+  const speakAnswer = (text: string, turnId?: number) => {
+    const cleaned = sanitizeForSpeech(text);
+    if (!cleaned) return;
+    if (!Speech) {
+      Alert.alert(
+        "Voice not available",
+        "Install dependencies to enable text-to-speech: npm install",
+      );
+      return;
+    }
+
+    Speech.stop();
+    setIsSpeaking(true);
+    setSpeakingTurnId(turnId ?? null);
+    Speech.speak(cleaned, {
+      language: "en-US",
+      rate: 0.95,
+      pitch: 1.0,
+      onDone: () => {
+        setIsSpeaking(false);
+        setSpeakingTurnId(null);
+      },
+      onStopped: () => {
+        setIsSpeaking(false);
+        setSpeakingTurnId(null);
+      },
+      onError: () => {
+        setIsSpeaking(false);
+        setSpeakingTurnId(null);
+      },
+    });
+  };
+
+  const toggleAutoRead = async () => {
+    const next = !autoRead;
+    setAutoRead(next);
+    await AsyncStorage.setItem(AUTO_READ_KEY, String(next));
+  };
+
   const handleQuery = async (question: string) => {
     setQueryLoading(true);
     try {
@@ -78,10 +152,11 @@ export default function HomeScreen() {
         answer: t.answer,
       }));
       const result = await api.query(question, history);
+      const newTurnId = ++_turnId;
       setConversation((prev) => [
         ...prev,
         {
-          id: ++_turnId,
+          id: newTurnId,
           question,
           answer: result.answer,
           sources: result.sources,
@@ -89,6 +164,9 @@ export default function HomeScreen() {
           showSources: result.sources.length > 0,
         },
       ]);
+      if (autoRead) {
+        setTimeout(() => speakAnswer(result.answer, newTurnId), 150);
+      }
       // Scroll to bottom after new answer
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
     } catch (err: any) {
@@ -133,11 +211,13 @@ export default function HomeScreen() {
   };
 
   return (
-    <ScrollView
-      ref={scrollRef}
-      style={styles.container}
-      contentContainerStyle={styles.content}
-    >
+    <View style={styles.screen}>
+      <AmbientBackground intensity="medium" />
+      <ScrollView
+        ref={scrollRef}
+        style={styles.container}
+        contentContainerStyle={styles.content}
+      >
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
@@ -178,6 +258,58 @@ export default function HomeScreen() {
       <View style={styles.querySection}>
         <QueryInput onSubmit={handleQuery} loading={queryLoading} />
       </View>
+      <View style={styles.voiceBar}>
+        <TouchableOpacity
+          style={[styles.voiceToggle, autoRead && styles.voiceToggleActive]}
+          onPress={toggleAutoRead}
+          activeOpacity={0.8}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: autoRead }}
+          accessibilityLabel="Auto read answers aloud"
+        >
+          <Ionicons
+            name={autoRead ? "volume-high" : "volume-mute"}
+            size={16}
+            color={autoRead ? "#fff" : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.voiceToggleText,
+              autoRead && styles.voiceToggleTextActive,
+            ]}
+          >
+            Auto Read
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.voiceAction, !conversation.length && { opacity: 0.45 }]}
+          onPress={() => {
+            const last = conversation[conversation.length - 1];
+            if (last) speakAnswer(last.answer, last.id);
+          }}
+          disabled={!conversation.length}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Read last answer aloud"
+        >
+          <Ionicons name="play-circle-outline" size={17} color={colors.accent} />
+          <Text style={styles.voiceActionText}>Read Last</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.voiceAction, !isSpeaking && { opacity: 0.45 }]}
+          onPress={stopSpeaking}
+          disabled={!isSpeaking}
+          activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Stop speaking"
+        >
+          <Ionicons name="stop-circle-outline" size={17} color={colors.warning} />
+          <Text style={styles.voiceActionText}>Stop</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.voiceHint}>
+        Tip: use your keyboard microphone to speak your question.
+      </Text>
 
       {/* Loading state for query */}
       {queryLoading && (
@@ -238,16 +370,52 @@ export default function HomeScreen() {
                 <View style={styles.answerCard}>
                   <View style={styles.answerHeader}>
                     <Text style={styles.answerLabel}>Answer</Text>
-                    {!turn.verified && (
-                      <View style={styles.unverifiedBadge}>
+                    <View style={styles.answerActions}>
+                      <TouchableOpacity
+                        onPress={() => speakAnswer(turn.answer, turn.id)}
+                        style={[
+                          styles.speakBtn,
+                          speakingTurnId === turn.id && styles.speakBtnActive,
+                        ]}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Read this answer aloud"
+                      >
                         <Ionicons
-                          name="alert-circle"
-                          size={12}
-                          color={colors.warning}
+                          name={
+                            speakingTurnId === turn.id
+                              ? "volume-high"
+                              : "volume-medium-outline"
+                          }
+                          size={13}
+                          color={
+                            speakingTurnId === turn.id
+                              ? colors.accent
+                              : colors.textSecondary
+                          }
                         />
-                        <Text style={styles.unverified}>Unverified</Text>
-                      </View>
-                    )}
+                        <Text
+                          style={[
+                            styles.speakBtnText,
+                            speakingTurnId === turn.id && {
+                              color: colors.accent,
+                            },
+                          ]}
+                        >
+                          Read
+                        </Text>
+                      </TouchableOpacity>
+                      {!turn.verified && (
+                        <View style={styles.unverifiedBadge}>
+                          <Ionicons
+                            name="alert-circle"
+                            size={12}
+                            color={colors.warning}
+                          />
+                          <Text style={styles.unverified}>Unverified</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                   <Text style={styles.answerText}>{turn.answer}</Text>
 
@@ -397,7 +565,7 @@ export default function HomeScreen() {
         !queryLoading && (
           <View style={styles.emptyState}>
             <Ionicons
-              name="sparkles-outline"
+              name="star-outline"
               size={48}
               color={colors.textMuted}
             />
@@ -407,14 +575,19 @@ export default function HomeScreen() {
             </Text>
           </View>
         )}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  screen: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "transparent",
   },
   content: {
     padding: spacing.xl,
@@ -469,7 +642,57 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   querySection: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  voiceBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  voiceToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  voiceToggleActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  voiceToggleText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  voiceToggleTextActive: {
+    color: "#fff",
+  },
+  voiceAction: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  voiceActionText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  voiceHint: {
+    color: colors.textMuted,
+    fontSize: 12,
+    marginBottom: spacing.lg,
   },
   loadingContainer: {
     alignItems: "center",
@@ -564,6 +787,31 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: spacing.sm,
+  },
+  answerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  speakBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.cardElevated,
+  },
+  speakBtnActive: {
+    borderColor: `${colors.accent}66`,
+    backgroundColor: `${colors.accent}18`,
+  },
+  speakBtnText: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: "700",
   },
   answerLabel: {
     color: colors.primary,
